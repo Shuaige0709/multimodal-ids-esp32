@@ -1,0 +1,19 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=c:\\Users\\yanwe\\OneDrive\\Desktop\\Projects\\espidf\\hello_world\\build"
+],
+"idf.currentSetup": "C:\\esp\\v5.5.3\\esp-idf",
+"idf.openOcdConfigs": [
+    "interface/ftdi/esp32_devkitj_v1.cfg",
+    "target/esp32.cfg"
+],
+"idf.customExtraVars": {
+    "IDF_TARGET": "esp32"
+},
+"idf.portWin": "COM3",
+"idf.flashType": "UART"
+}

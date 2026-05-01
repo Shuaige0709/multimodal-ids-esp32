@@ -1,0 +1,69 @@
+NIDS ESP32 Project Notes
+========================
+
+Current Working Features
+------------------------
+1. ESP32 promiscuous packet capture
+   - Captures Wi-Fi frames in monitor/promiscuous mode.
+   - Extracts RSSI, SNR, packet timestamp, IPAT, sequence control, packet length, and source MAC.
+
+2. RFC5424 syslog output
+   - Formats packet features into RFC5424 structured syslog messages.
+   - Sends logs to a remote collector through UDP.
+
+3. Wi-Fi recovery logic
+   - Detects Wi-Fi disconnect events.
+   - Reconnects automatically when the STA drops.
+   - Resumes syslog transmission after reconnect.
+
+4. Adaptive send rate
+   - Reduces send frequency after repeated transmission failures.
+   - Restores faster sending after successful transmissions.
+
+5. Local backlog buffer
+   - Stores syslog messages locally when Wi-Fi is unavailable.
+   - Flushes buffered messages after connectivity returns.
+   - Prevents log loss during temporary deauth or network outages.
+
+6. Attack labeling workflow
+   - attack_sync.py sends START / STOP control labels.
+   - Collector uses the labels to mark attack windows automatically.
+   - Deauth intensity is sent in small batches for easier dataset collection.
+
+Files to Watch
+--------------
+- main/main.c
+  Core ESP32 packet capture and syslog logic.
+
+- attack_sync.py
+  Attack trigger script and label control.
+
+- nids_collector.py / nids_collector_v2.py
+  Windows-side collector for logs and labels.
+
+Future Feature Log
+------------------
+Use this format when adding a new feature:
+
+Date:
+Feature name:
+Why it was added:
+What changed in code:
+Files changed:
+Test result:
+Notes for meeting/report:
+
+Example entry:
+Date: 2026-05-01
+Feature name: Wi-Fi recovery and backlog flush
+Why it was added: To keep logging during deauth and restore transmissions after reconnect.
+What changed in code: Added event handler, adaptive send rate, and local backlog buffer.
+Files changed: main/main.c
+Test result: No syntax errors; ready for build and flash test.
+Notes for meeting/report: Improves reliability under attack conditions.
+
+Quick Summary for Report
+------------------------
+- The system now captures Wi-Fi traffic on ESP32, labels attack periods automatically, and sends RFC5424 syslog records to the collector.
+- It can recover from temporary Wi-Fi loss, slow down under send errors, and buffer logs locally to reduce data loss.
+- The current workflow is suitable for iterative dataset collection and later multi-attack expansion.
