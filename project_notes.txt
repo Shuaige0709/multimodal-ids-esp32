@@ -38,7 +38,8 @@ Files to Watch
 - attack_sync.py
   Attack trigger script and label control.
 
-- nids_collector.py / nids_collector_v2.py
+- Canonical collector: nids_collector.py
+- Compatibility alias: nids_collector_v2.py
   Windows-side collector for logs and labels.
 
 Future Feature Log

@@ -9,14 +9,17 @@
 #include "esp_wifi.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
+#include "driver/i2c.h"
+#include "driver/gpio.h"
 #include "lwip/sockets.h"
 #include "string.h"
 #include <errno.h>
 
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "oled.h"
 
-#define YOUR_CPU_IP_ADDR "192.168.1.10"  // update with your syslog server IP; keep aligned with attack_sync.py
+#define YOUR_CPU_IP_ADDR "192.168.0.12"  // update with your syslog server IP; keep aligned with attack_sync.py (collector on Raspberry Pi or Windows)
 #define SYSLOG_PRI 14      // Facility: User(1) * 8 + Severity: Info(6)
 #define VERSION "1"
 #define HOSTNAME "esp32-node"
@@ -45,7 +48,7 @@ static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
 static uint32_t syslog_backlog_dropped = 0;
 
-static void send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
+static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
 
 typedef struct{
     uint32_t timestamp; // packet timestamp
@@ -82,7 +85,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 }
 
 // Function to send syslog message via UDP to a remote server (such as kiwi syslog server)
-static void send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer) {
+static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer) {
     int err = sendto(sock, buffer, strlen(buffer), 0, (struct sockaddr *)dest_addr, sizeof(*dest_addr));
     if (err < 0) {
         if (errno == ENOMEM || errno == 118) {
@@ -99,12 +102,14 @@ static void send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char 
             send_interval_packets = SEND_INTERVAL_SLOW;
         }
         ESP_LOGW("UDP", "Error occurred during sending: errno %d", errno);
+        return false;
     } else {
         consecutive_send_failures = 0;
         consecutive_send_successes++;
         if (consecutive_send_successes >= SEND_RECOVER_THRESHOLD) {
             send_interval_packets = SEND_INTERVAL_FAST;
         }
+        return true;
     }
 }
 
@@ -268,6 +273,13 @@ void nids_analysis_task(void* arg){
     char syslog_buffer[256];
     uint32_t pkt_count = 0;
 
+    // OLED status counters
+    static bool oled_inited = false;
+    static int64_t last_oled_update_ms = 0;
+    static const int64_t OLED_UPDATE_MIN_INTERVAL_MS = 1500;
+    static int8_t last_rssi = 0;
+    static uint32_t last_ipat = 0;
+
     // Initialize persistent UDP socket for syslog transmission if in SYSlOG_MODE
     struct sockaddr_in dest_addr;
     dest_addr.sin_addr.s_addr = inet_addr(YOUR_CPU_IP_ADDR); // update with your syslog server IP
@@ -291,6 +303,10 @@ void nids_analysis_task(void* arg){
             pkt_count++;
             UBaseType_t stack_mark = uxTaskGetStackHighWaterMark(NULL);
             
+            // Track latest RSSI and IPAT for OLED display
+            last_rssi = info.rssi;
+            last_ipat = info.ipat;
+            
             if (wifi_connected && SYSlOG_MODE == 1 && sock >= 0) {
                 flush_syslog_backlog(sock, &dest_addr);
             }
@@ -303,14 +319,16 @@ void nids_analysis_task(void* arg){
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms);
 
                 if(SYSlOG_MODE == 1 && sock >= 0){
-                    send_syslog_udp(sock, &dest_addr, syslog_buffer);
+                    if (!send_syslog_udp(sock, &dest_addr, syslog_buffer)) {
+                        syslog_backlog_push(syslog_buffer);
+                    }
                 } 
                 else{
                     printf("%s\n", syslog_buffer);
                 }
             } else if (!wifi_connected && pkt_count % 100 == 0) {
                 ESP_LOGW(TAG2, "WiFi down; deferring syslog sends (pkt_count=%lu)", pkt_count);
-            } else if (!wifi_connected && pkt_count % send_interval_packets == 0) {
+            } else if (!wifi_connected) {
                 uint32_t free_heap = esp_get_free_heap_size();
                 int64_t uptime_ms = esp_timer_get_time() / 1000;
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms);
@@ -318,8 +336,28 @@ void nids_analysis_task(void* arg){
             }
 
             if(pkt_count % 100 == 0){ // print info every 100 packets
-                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu)", pkt_count, send_interval_packets);
+                uint32_t free_heap = esp_get_free_heap_size();
+                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu)", pkt_count, send_interval_packets, free_heap);
                 printf("Stack remain: %lu bytes\n", (uint32_t)stack_mark);
+                if(!oled_inited){
+                    ESP_LOGI(TAG, "Attempting OLED init...");
+                    oled_inited = oled_init();
+                    if(!oled_inited) {
+                        ESP_LOGW(TAG, "OLED init failed");
+                    } else {
+                        ESP_LOGI(TAG, "OLED init SUCCESS");
+                    }
+                }
+                if(oled_inited && (pkt_count % 200 == 0)){
+                    int64_t now_ms = esp_timer_get_time() / 1000;
+                    if ((now_ms - last_oled_update_ms) >= OLED_UPDATE_MIN_INTERVAL_MS) {
+                        uint8_t current_channel = 11;  // currently fixed at ch 11
+                        bool attack_flag = false;       // TODO: set to true when attack detected
+                        oled_show_stats(wifi_connected, pkt_count, send_interval_packets, free_heap,
+                                       last_rssi, last_ipat, stack_mark, current_channel, attack_flag);
+                        last_oled_update_ms = now_ms;
+                    }
+                }
             }
             if(pkt_count >= 100000){ // reset count after 100k packets to avoid overflow
                 pkt_count = 0;
@@ -347,6 +385,19 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
 
+    // Initialize I2C for OLED (SDA=21, SCL=22)
+    i2c_config_t i2c_conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = 21,
+        .scl_io_num = 22,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = 400000,
+    };
+    ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &i2c_conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, i2c_conf.mode, 0, 0, 0));
+    ESP_LOGI(TAG, "I2C initialized for OLED");
+
     // init TCP/IP stack
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -371,8 +422,8 @@ void app_main(void) {
     // Setting Wi-Fi ssid and password
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "YANWEI",
-            .password = "Shuaige0709",
+            .ssid = "302",
+            .password = "88888888",
         },
     };
     
