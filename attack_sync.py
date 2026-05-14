@@ -7,13 +7,18 @@ PC_PORT = 9999
 
 BSSID = '78:44:76:fb:69:76'
 TARGET_MAC = 'b0:cb:d8:c9:92:00'
+LABEL_REPEATS = 3
+LABEL_PAUSE = 0.2
 
-def send_label(status):
+def send_label(status, repeats=LABEL_REPEATS, pause=LABEL_PAUSE):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.sendto(status.encode(), (PC_IP, PC_PORT))
+    for _ in range(repeats):
+        sock.sendto(status.encode(), (PC_IP, PC_PORT))
+        time.sleep(pause)
 
 print(">>> READY FOR ATTACK, NOTIFY THE LABELERS")
 send_label("START")
+time.sleep(0.5)
 
 # Send deauth frames in small batches to reduce interruption on ESP32
 batch = 10
