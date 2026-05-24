@@ -4,6 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -33,6 +34,10 @@
 
 static const char *TAG = "NIDS_INIT";
 static const char *TAG2 = "NIDS_SNIFFER";
+
+// Event group to signal when WiFi has obtained an IP
+#define WIFI_CONNECTED_BIT BIT0
+static EventGroupHandle_t wifi_event_group = NULL;
 
 static volatile bool wifi_connected = false;
 static uint32_t wifi_reconnect_count = 0;
@@ -79,6 +84,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         wifi_connected = false;
         wifi_reconnect_count++;
         ESP_LOGW(TAG, "WiFi disconnected; pausing UDP sends and reconnecting");
+        if (wifi_event_group) {
+            xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        }
         esp_wifi_connect();
         return;
     }
@@ -95,6 +103,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         consecutive_send_failures = 0;
         consecutive_send_successes = 0;
         send_interval_packets = SEND_INTERVAL_FAST;
+        if (wifi_event_group) {
+            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        }
     }
 }
 
@@ -522,12 +533,22 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Connecting to WiFi...");
     esp_wifi_connect(); // start connecting...
-
-    // Once the connection is successful and an IP address is obtained, then enable promiscuous mode.
-    // 我們先簡單延遲 5 秒確保連線成功 (Week 3 進階版會用 Event Handler 判斷)
-    vTaskDelay(pdMS_TO_TICKS(5000)); 
-
-    esp_wifi_set_promiscuous(true); // enable promiscuous mode
+    // Wait for IP_EVENT_STA_GOT_IP via event group instead of fixed delay
+    wifi_event_group = xEventGroupCreate();
+    if (wifi_event_group == NULL) {
+        ESP_LOGW(TAG, "Failed to create wifi event group; falling back to fixed delay");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_wifi_set_promiscuous(true);
+    } else {
+        // Wait up to 10 seconds for the IP; if timed out, we still enable promiscuous
+        EventBits_t bits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(10000));
+        if (bits & WIFI_CONNECTED_BIT) {
+            ESP_LOGI(TAG, "WiFi got IP (event). Enabling promiscuous mode");
+        } else {
+            ESP_LOGW(TAG, "Timed out waiting for IP; enabling promiscuous mode anyway");
+        }
+        esp_wifi_set_promiscuous(true);
+    }
 
     // Start a simple HTTP server (for SYN flood resource testing)
     start_webserver();
