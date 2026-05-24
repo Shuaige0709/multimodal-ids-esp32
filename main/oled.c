@@ -162,7 +162,8 @@ static void draw_text_at(int page, int x_col, const char *text)
 
 void oled_show_stats(bool wifi_connected, uint32_t pkt_count, uint32_t send_interval,
                      uint32_t free_heap, int8_t rssi, uint32_t ipat,
-                     uint32_t stack_watermark, uint8_t channel, bool attack_flag)
+                     uint32_t stack_watermark, uint8_t channel,
+                     uint32_t wifi_reconnect_count, uint32_t queue_depth, bool attack_flag)
 {
     static uint32_t last_update = 0;
     uint32_t now = xTaskGetTickCount();
@@ -185,9 +186,9 @@ void oled_show_stats(bool wifi_connected, uint32_t pkt_count, uint32_t send_inte
     if (attack_flag) {
         snprintf(status_str, sizeof(status_str), "[ATTACK!]");
     } else if (wifi_connected) {
-        snprintf(status_str, sizeof(status_str), "WiFi");
+        snprintf(status_str, sizeof(status_str), "WiFi R:%lu Q:%lu", wifi_reconnect_count, queue_depth);
     } else {
-        snprintf(status_str, sizeof(status_str), "NoWiFi");
+        snprintf(status_str, sizeof(status_str), "NoWiFi R:%lu Q:%lu", wifi_reconnect_count, queue_depth);
     }
     draw_text_at(0, 0, status_str);
 

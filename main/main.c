@@ -18,8 +18,11 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "oled.h"
+#include "esp_http_server.h"
 
-#define YOUR_CPU_IP_ADDR "192.168.0.12"  // update with your syslog server IP; keep aligned with attack_sync.py (collector on Raspberry Pi or Windows)
+#define WIFI_SSID "302"
+#define WIFI_PASS "88888888"
+#define YOUR_CPU_IP_ADDR "10.69.238.170"  // update with your syslog server IP; keep aligned with attack_sync.py (collector on Raspberry Pi or Windows)
 #define SYSLOG_PRI 14      // Facility: User(1) * 8 + Severity: Info(6)
 #define VERSION "1"
 #define HOSTNAME "esp32-node"
@@ -32,9 +35,11 @@ static const char *TAG = "NIDS_INIT";
 static const char *TAG2 = "NIDS_SNIFFER";
 
 static volatile bool wifi_connected = false;
+static uint32_t wifi_reconnect_count = 0;
 static uint32_t send_interval_packets = 10;
 static uint32_t consecutive_send_failures = 0;
 static uint32_t consecutive_send_successes = 0;
+static uint32_t udp_send_failure_total = 0;
 static const uint32_t SEND_INTERVAL_FAST = 10;
 static const uint32_t SEND_INTERVAL_SLOW = 20;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
@@ -47,6 +52,7 @@ static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
 static uint32_t syslog_backlog_dropped = 0;
+static uint32_t queue_peak_depth = 0;
 
 static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
 
@@ -61,6 +67,7 @@ typedef struct{
     uint32_t len; // packet length
     uint8_t src_mac[6]; // source MAC address
     char type_str[8]; // packet type (MGMT, CTRL, DATA, MISC) 
+    char subtype[16]; // detailed subtype (e.g., BEACON, PROBE_REQ)
 } nids_pkt_info_t;
 
 static QueueHandle_t pkt_info_queue = NULL; // queue to store packet info for processing
@@ -70,17 +77,24 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_connected = false;
+        wifi_reconnect_count++;
         ESP_LOGW(TAG, "WiFi disconnected; pausing UDP sends and reconnecting");
         esp_wifi_connect();
         return;
     }
 
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        // Log the acquired IP address, netmask and gateway for easy verification
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
+        esp_netif_ip_info_t *ip_info = &event->ip_info;
+        ESP_LOGI(TAG, "WiFi connected; resuming UDP sends");
+        ESP_LOGI(TAG, "Got IP: " IPSTR ", Netmask: " IPSTR ", Gateway: " IPSTR,
+                 IP2STR(&ip_info->ip), IP2STR(&ip_info->netmask), IP2STR(&ip_info->gw));
+
         wifi_connected = true;
         consecutive_send_failures = 0;
         consecutive_send_successes = 0;
         send_interval_packets = SEND_INTERVAL_FAST;
-        ESP_LOGI(TAG, "WiFi connected; resuming UDP sends");
     }
 }
 
@@ -97,6 +111,7 @@ static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char 
 
     if (err < 0) {
         consecutive_send_failures++;
+        udp_send_failure_total++;
         consecutive_send_successes = 0;
         if (consecutive_send_failures >= SEND_FAIL_THRESHOLD) {
             send_interval_packets = SEND_INTERVAL_SLOW;
@@ -233,6 +248,33 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
     // 802.11 header
     info.seq_ctrl = (info.len >= 24) ? (((pkt->payload[23] << 8) | pkt->payload[22]) >> 4) : 0; // sequence control field is located at offset 22-23 in the 802.11 header for both management and data frames
 
+    // Parse 802.11 Frame Control to extract subtype when possible
+    if (info.len >= 1) {
+        uint8_t fc0 = pkt->payload[0];
+        uint8_t frame_type = (fc0 >> 2) & 0x3; // 0=Mgmt,1=Ctrl,2=Data
+        uint8_t fc_subtype = (fc0 >> 4) & 0xF;
+        if (frame_type == 0) { // Management frames
+            switch (fc_subtype) {
+                case 8:
+                    strcpy(info.subtype, "BEACON");
+                    break;
+                case 4:
+                    strcpy(info.subtype, "PROBE_REQ");
+                    break;
+                case 5:
+                    strcpy(info.subtype, "PROBE_RESP");
+                    break;
+                default:
+                    strcpy(info.subtype, "MGMT_OTHER");
+                    break;
+            }
+        } else {
+            info.subtype[0] = '\0';
+        }
+    } else {
+        info.subtype[0] = '\0';
+    }
+
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     xQueueSendFromISR(pkt_info_queue, &info, &xHigherPriorityTaskWoken);
     if (xHigherPriorityTaskWoken) {
@@ -261,10 +303,51 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
     // format: <PRI>1 TIMESTAMP HOSTNAME APPNAME PROCID MSGID MSG
     snprintf(buf, size, 
         "<%d>1 %s.%03ldZ %s %s - - "
-        "[meta@%s rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" heap=\"%lu\" uptime=\"%lld\"] "
+        "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\"] "
         "Deauth_Detection_Heartbeat\n",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
-        PEN, info->rssi, info->snr, info->ipat, info->seq_ctrl, heap, uptime_ms);
+        PEN, info->subtype, info->rssi, info->snr, info->ipat, info->seq_ctrl, heap,
+        esp_get_minimum_free_heap_size(), uptime_ms, wifi_reconnect_count, queue_peak_depth,
+        udp_send_failure_total, syslog_backlog_count, syslog_backlog_dropped);
+}
+
+// --- Simple HTTP server for testing SYN flood impact ---
+static esp_err_t get_handler(httpd_req_t *req)
+{
+    const char *resp = "Hello, I am ESP32!";
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static void start_webserver(void)
+{
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_open_sockets = 5; // small to make resource exhaustion observable
+
+    httpd_handle_t server = NULL;
+    if (httpd_start(&server, &config) == ESP_OK) {
+        httpd_uri_t uri_get = {
+            .uri = "/",
+            .method = HTTP_GET,
+            .handler = get_handler,
+            .user_ctx = NULL
+        };
+        httpd_register_uri_handler(server, &uri_get);
+        ESP_LOGI(TAG, "HTTP server started on port 80");
+    } else {
+        ESP_LOGW(TAG, "Failed to start HTTP server");
+    }
+}
+
+// Task: print free heap every second for easy syslog collection
+static void heap_logger_task(void *arg)
+{
+    (void)arg;
+    while (1) {
+        uint32_t free_heap = esp_get_free_heap_size();
+        ESP_LOGI("HEAP", "Free heap: %lu bytes", free_heap);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
 
@@ -301,6 +384,10 @@ void nids_analysis_task(void* arg){
     while(1){
         if(xQueueReceive(pkt_info_queue, &info, portMAX_DELAY) == pdTRUE){
             pkt_count++;
+            UBaseType_t queue_depth = uxQueueMessagesWaiting(pkt_info_queue);
+            if (queue_depth > queue_peak_depth) {
+                queue_peak_depth = queue_depth;
+            }
             UBaseType_t stack_mark = uxTaskGetStackHighWaterMark(NULL);
             
             // Track latest RSSI and IPAT for OLED display
@@ -354,7 +441,8 @@ void nids_analysis_task(void* arg){
                         uint8_t current_channel = 11;  // currently fixed at ch 11
                         bool attack_flag = false;       // TODO: set to true when attack detected
                         oled_show_stats(wifi_connected, pkt_count, send_interval_packets, free_heap,
-                                       last_rssi, last_ipat, stack_mark, current_channel, attack_flag);
+                                       last_rssi, last_ipat, stack_mark, current_channel,
+                                       wifi_reconnect_count, queue_depth, attack_flag);
                         last_oled_update_ms = now_ms;
                     }
                 }
@@ -422,8 +510,8 @@ void app_main(void) {
     // Setting Wi-Fi ssid and password
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = "302",
-            .password = "88888888",
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
         },
     };
     
@@ -440,6 +528,12 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(5000)); 
 
     esp_wifi_set_promiscuous(true); // enable promiscuous mode
+
+    // Start a simple HTTP server (for SYN flood resource testing)
+    start_webserver();
+
+    // Start heap logger task to print free heap every second
+    xTaskCreate(heap_logger_task, "heap_logger", 2048, NULL, 5, NULL);
 
     wifi_promiscuous_filter_t filter = {
         .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL, // capture all types of packets

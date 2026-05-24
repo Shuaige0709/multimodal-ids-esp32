@@ -1,0 +1,15 @@
+pen: 來源/廠商識別碼（Private Enterprise Number），用於 RFC5424 metadata 的 meta 命名空間（辨識裝置/供應商）。
+rssi: 接收訊號強度（dBm），數值越負表示訊號越弱。
+snr: 訊號與雜訊比（dB），通常為 rssi 減 noise_floor，越大越好。
+ipat: 連續封包間隔（Inter‑Packet Arrival Time），以微秒計算的兩封包時間差。
+seq: 802.11 的序列控制/序列號（用於識別連續封包與重傳）。
+heap: 當前可用堆(heap)大小（位元組），表示可用記憶體。
+minheap: 自開機以來觀測到的最低可用堆大小（位元組），用來判斷記憶體壓力尖峰。
+uptime: 裝置運行時間（通常以毫秒計），從啟動到現在的經過時間。
+reconn: Wi‑Fi 重連次數（斷線後嘗試重新連線的累計計數）。
+qpeak: 封包資訊佇列的峰值深度（觀測到的最大等待訊息數）。
+udpfail: UDP 發送失敗的累計次數（sendto/網路傳送錯誤計數）。
+backlog: 本地 syslog 緩衝（backlog）中當前已暫存的訊息數量。
+dropped: 因緩衝滿而被丟棄的 syslog 訊息總數（overflow 丟棄計數）。
+label: 資料標註（由使用者或攻擊腳本指定的標籤，例如 baseline/attack1），用於後處理與分類。
+timestamp: 封包的時間戳（來自無線硬體/metadata，通常為微秒等解析度），用於計算 ipat 與事件排序。
