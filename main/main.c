@@ -20,17 +20,19 @@
 #include "esp_netif.h"
 #include "oled.h"
 #include "esp_http_server.h"
+#include "driver/uart.h"
 
 #define WIFI_SSID "302"
 #define WIFI_PASS "88888888"
-#define YOUR_CPU_IP_ADDR "10.69.238.170"  // update with your syslog server IP; keep aligned with attack_sync.py (collector on Raspberry Pi or Windows)
+#define YOUR_CPU_IP_ADDR "192.168.0.13"  // update with your syslog server IP; keep aligned with attack_sync.py (collector on Raspberry Pi or Windows)
 #define SYSLOG_PRI 14      // Facility: User(1) * 8 + Severity: Info(6)
 #define VERSION "1"
 #define HOSTNAME "esp32-node"
 #define APP_NAME "NIDS_PROBE"
 #define PEN "45917"        // Private Enterprise Number for ESP32 (may apply from IANA later)
-#define SYSlOG_MODE 1         // 0: print to console, 1: send via UDP to remote syslog server
+#define SYSlOG_MODE 1         // 0: print to console, 1: send via UDP, 2: send via UART/USB serial
 #define CHANNEL_HOP_MODE 0 // 0: fixed channel, 1: channel hopping
+#define DATASET_PROFILE 1   // 1: higher-throughput collection, 0: runtime-balanced profile
 
 static const char *TAG = "NIDS_INIT";
 static const char *TAG2 = "NIDS_SNIFFER";
@@ -45,14 +47,15 @@ static uint32_t send_interval_packets = 10;
 static uint32_t consecutive_send_failures = 0;
 static uint32_t consecutive_send_successes = 0;
 static uint32_t udp_send_failure_total = 0;
-static const uint32_t SEND_INTERVAL_FAST = 10;
-static const uint32_t SEND_INTERVAL_SLOW = 20;
+static const uint32_t SEND_INTERVAL_FAST = DATASET_PROFILE ? 50 : 20;
+static const uint32_t SEND_INTERVAL_SLOW = DATASET_PROFILE ? 100 : 50;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
 static const uint32_t SEND_RECOVER_THRESHOLD = 10;
-static const uint32_t SYSLOG_BACKLOG_MAX = 64;
+static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 512 : 256;
+static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
 static const uint32_t SYSLOG_MSG_MAX = 256;
 
-static char syslog_backlog[64][256];
+static char syslog_backlog[512][256];
 static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
@@ -60,6 +63,8 @@ static uint32_t syslog_backlog_dropped = 0;
 static uint32_t queue_peak_depth = 0;
 
 static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
+static void serial_init(void);
+static void send_syslog_serial(const char *buffer);
 
 typedef struct{
     uint32_t timestamp; // packet timestamp
@@ -171,10 +176,14 @@ static bool syslog_backlog_pop(char *message_out)
 static void flush_syslog_backlog(int sock, struct sockaddr_in *dest_addr)
 {
     char backlog_message[256];
-    uint32_t flush_budget = 4;
+    uint32_t flush_budget = SYSLOG_FLUSH_BUDGET;
 
     while (wifi_connected && flush_budget > 0 && syslog_backlog_pop(backlog_message)) {
-        send_syslog_udp(sock, dest_addr, backlog_message);
+        if (!send_syslog_udp(sock, dest_addr, backlog_message)) {
+            // If forwarding fails again after reconnect, put it back and stop flushing.
+            syslog_backlog_push(backlog_message);
+            break;
+        }
         flush_budget--;
     }
 
@@ -325,8 +334,19 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
 // --- Simple HTTP server for testing SYN flood impact ---
 static esp_err_t get_handler(httpd_req_t *req)
 {
-    const char *resp = "Hello, I am ESP32!";
-    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+    uint8_t mac[6];
+    esp_wifi_get_mac(WIFI_IF_STA, mac);
+    
+    char resp[256];
+    snprintf(resp, sizeof(resp),
+        "Hello, I am ESP32!\n"
+        "MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n"
+        "SSID: %s\n"
+        "Channel: 11\n",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+        WIFI_SSID);
+    
+    httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
 }
 
@@ -376,9 +396,9 @@ void nids_analysis_task(void* arg){
 
     // Initialize persistent UDP socket for syslog transmission if in SYSlOG_MODE
     struct sockaddr_in dest_addr;
-    dest_addr.sin_addr.s_addr = inet_addr(YOUR_CPU_IP_ADDR); // update with your syslog server IP
+    dest_addr.sin_addr.s_addr = inet_addr(YOUR_CPU_IP_ADDR); // update with your syslog server IP (laptop relay)
     dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(514);                        // 514 is the default port for syslog
+    dest_addr.sin_port = htons(1514);                        // relay listening on 1514; relay will forward to Pi 514
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     if (sock < 0) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
@@ -387,7 +407,7 @@ void nids_analysis_task(void* arg){
     }
 
     // Increase UDP send buffer to reduce transient ENOMEM (errno 12) under traffic bursts.
-    int sndbuf = 16 * 1024;
+    int sndbuf = DATASET_PROFILE ? (32 * 1024) : (16 * 1024);
     if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) != 0) {
         ESP_LOGW(TAG, "setsockopt SO_SNDBUF failed: errno %d", errno);
     }
@@ -420,8 +440,9 @@ void nids_analysis_task(void* arg){
                     if (!send_syslog_udp(sock, &dest_addr, syslog_buffer)) {
                         syslog_backlog_push(syslog_buffer);
                     }
-                } 
-                else{
+                } else if (SYSlOG_MODE == 2) {
+                    send_syslog_serial(syslog_buffer);
+                } else {
                     printf("%s\n", syslog_buffer);
                 }
             } else if (!wifi_connected && pkt_count % 100 == 0) {
@@ -473,7 +494,7 @@ void app_main(void) {
     // get the last reset reason
     esp_reset_reason_t reason = esp_reset_reason();
     ESP_LOGI("HIDS", "Last Reset Reason: %d", reason);
-    ESP_LOGI(TAG, "Syslog server target: %s:514", YOUR_CPU_IP_ADDR);
+    ESP_LOGI(TAG, "Syslog server target: %s:1514", YOUR_CPU_IP_ADDR);
 
     // init NVS (WiFi driver needs it)
     esp_err_t ret = nvs_flash_init();
@@ -496,6 +517,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &i2c_conf));
     ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, i2c_conf.mode, 0, 0, 0));
     ESP_LOGI(TAG, "I2C initialized for OLED");
+
+    // Initialize UART for optional serial syslog output (USB-UART)
+    serial_init();
 
     // init TCP/IP stack
     ESP_ERROR_CHECK(esp_netif_init());
@@ -594,4 +618,36 @@ void app_main(void) {
     //     ESP_LOGI(TAG, "Free Heap: %ld bytes", (long)esp_get_free_heap_size());
     //     vTaskDelay(pdMS_TO_TICKS(5000));
     // }
+}
+
+// --- UART helper functions for serial syslog ---
+// UART configuration: using UART1 (TX=GPIO17, RX=GPIO16) by default.
+#define NIDS_UART_PORT UART_NUM_1
+#define NIDS_UART_TX_PIN 17
+#define NIDS_UART_RX_PIN 16
+#define NIDS_UART_BAUD 115200
+
+static void serial_init(void)
+{
+    const uart_config_t uart_config = {
+        .baud_rate = NIDS_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB,
+    };
+    uart_driver_install(NIDS_UART_PORT, 1024 * 2, 0, 0, NULL, 0);
+    uart_param_config(NIDS_UART_PORT, &uart_config);
+    uart_set_pin(NIDS_UART_PORT, NIDS_UART_TX_PIN, NIDS_UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+}
+
+static void send_syslog_serial(const char *buffer)
+{
+    if (buffer == NULL) return;
+    size_t len = strlen(buffer);
+    // append newline if not present
+    bool need_nl = (len == 0 || buffer[len-1] != '\n');
+    uart_write_bytes(NIDS_UART_PORT, buffer, len);
+    if (need_nl) uart_write_bytes(NIDS_UART_PORT, "\n", 1);
 }
