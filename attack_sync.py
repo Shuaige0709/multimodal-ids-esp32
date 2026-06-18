@@ -2,12 +2,12 @@ import os
 import socket
 import time
 
-PC_IP = '192.168.220.50'
+PC_IP = '192.168.220.1' # IP of VMNet1 interface on Kali (the device that receives labels)
 PC_PORT = 9999
 
-BSSID = '78:44:76:fb:69:76'
+BSSID = '68:02:b8:bb:af:57'
 TARGET_MAC = 'b0:cb:d8:c9:92:00'
-LABEL_REPEATS = 3
+LABEL_REPEATS = 1
 LABEL_PAUSE = 0.2
 
 def send_label(status, repeats=LABEL_REPEATS, pause=LABEL_PAUSE):

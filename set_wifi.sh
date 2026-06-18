@@ -15,3 +15,7 @@ echo " 攻擊網卡：wlan0mon (Channel 11)"
 echo " 通訊網卡：eth0 (IP: 192.168.220.50)"
 echo " 目標電腦：192.168.220.2 (Windows Host)"
 echo "==========================================="
+echo
+echo "=== TO RECOVER ==="
+echo "sudo airmon-ng stop wlan0mon"
+echo "sudo systemctl restart NetworkManager"
