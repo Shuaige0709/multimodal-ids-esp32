@@ -68,3 +68,40 @@ Quick Summary for Report
 - The system now captures Wi-Fi traffic on ESP32, labels attack periods automatically, and sends RFC5424 syslog records to the collector.
 - It can recover from temporary Wi-Fi loss, slow down under send errors, and buffer logs locally to reduce data loss.
 - The current workflow is suitable for iterative dataset collection and later multi-attack expansion.
+
+Progress Update (2026-05-14)
+----------------------------
+Completed this round
+1. OLED telemetry stabilization (ESP32 + SSD1306)
+   - Replaced previous display approach with direct SSD1306 I2C driver.
+   - Implemented 8x8 row-wise font rendering and 4-row spaced layout.
+   - Added key runtime fields on OLED: Wi-Fi status, reconnect count, queue depth, RSSI, IPAT, heap, stack watermark, channel, packet count.
+
+2. I2C and runtime robustness
+   - Consolidated I2C initialization to avoid duplicate driver install issues.
+   - Kept OLED updates throttled and heap-aware to reduce instability risk.
+
+3. Syslog/telemetry enhancements
+   - Added reconnect/backlog/failure context into RFC5424 metadata.
+   - Added IP logging on STA got IP event (IP/netmask/gateway) for fast network verification.
+
+4. SYN-flood test preparation
+   - Added minimal HTTP server endpoint on ESP32 (port 80) to create an effective attack surface.
+   - Added periodic heap logger task (1s interval) for time-series resource observation.
+   - Updated attack script comments to English for cleaner documentation style.
+
+Current blockers / risks
+1. Host connectivity path between Kali VM and Windows collector is still being tuned.
+   - Bridged mode may depend on host NIC/driver/hotspot behavior.
+   - Host-only (VMnet1) remains a reliable fallback path.
+
+2. Flash/monitor workflow still depends on stable COM port ownership.
+
+Recommended immediate next steps
+1. Validate network route first (Kali <-> collector) and lock one topology (Bridged or Host-only).
+2. Flash latest firmware and confirm:
+   - HTTP endpoint responds at ESP32 IP
+   - Heap logger outputs every second
+   - OLED stats remain stable during normal traffic
+3. Run low-intensity SYN test first, then increase batches gradually while collecting syslog.
+4. Record one clean baseline run and one attack run for comparison in report figures.

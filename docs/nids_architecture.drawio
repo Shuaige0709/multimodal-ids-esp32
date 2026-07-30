@@ -1,0 +1,94 @@
+<mxfile host="app.diagrams.net" agent="5.0 (Windows)">
+  <diagram id="nids-arch-1" name="NIDS Architecture">
+    <mxGraphModel dx="1926" dy="662" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFCCCB;strokeColor=#000000;" value="Kali\n攻擊主機" vertex="1">
+          <mxGeometry height="80" width="180" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#000000;" value="ESP32&lt;div&gt;NIDS Probe&lt;/div&gt;&lt;div&gt;(main.c sniffing)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="220" x="240" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E2F0D9;strokeColor=#000000;" value="USB / Serial\n輸出 log" vertex="1">
+          <mxGeometry height="60" width="160" x="500" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DDEBF7;strokeColor=#000000;" value="筆電 / 資料接收端&lt;div&gt;(USB 接收 / Collector)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="220" x="500" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F3E6FF;strokeColor=#000000;" value="START / STOP\n標籤" vertex="1">
+          <mxGeometry height="60" width="160" x="240" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;" value="CSV 匯出 / 資料整理" vertex="1">
+          <mxGeometry height="80" width="200" x="760" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#000000;" value="特徵前處理 / 資料同步" vertex="1">
+          <mxGeometry height="80" width="200" x="760" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDE9D9;strokeColor=#000000;" value="Dataset 建立" vertex="1">
+          <mxGeometry height="60" width="160" x="-40" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDE9D9;strokeColor=#000000;" value="Model Training" vertex="1">
+          <mxGeometry height="60" width="160" x="140" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDE9D9;strokeColor=#000000;" value="Model Evaluation" vertex="1">
+          <mxGeometry height="60" width="160" x="320" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDE9D9;strokeColor=#000000;" value="Model Export / Deploy" vertex="1">
+          <mxGeometry height="60" width="160" x="500" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6F7FF;strokeColor=#000000;" value="即時異常偵測" vertex="1">
+          <mxGeometry height="60" width="160" x="370" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6F7FF;strokeColor=#000000;" value="攻擊狀態判斷" vertex="1">
+          <mxGeometry height="60" width="160" x="550" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6F7FF;strokeColor=#000000;" value="防禦動作&lt;div&gt;警示/記錄/降頻/封鎖/切換模式&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="200" x="730" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;dashed=1;endArrow=block;strokeColor=#777777;" target="6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="12">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;strokeColor=#000000;" target="15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;dashed=1;endArrow=block;strokeColor=#777777;" target="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

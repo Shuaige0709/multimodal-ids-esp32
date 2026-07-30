@@ -22,9 +22,9 @@
 #include "esp_http_server.h"
 #include "driver/uart.h"
 
-#define WIFI_SSID "302"
-#define WIFI_PASS "88888888"
-#define YOUR_CPU_IP_ADDR "192.168.0.13"  // update with your syslog server IP; keep aligned with attack_sync.py (collector on Raspberry Pi or Windows)
+#include "net_config.h"   // WIFI_SSID/PASS, ports, auto-discovery settings (single source of truth)
+#include "model.h"        // generated on-device inference model (nids_window_features_t / nids_predict)
+
 #define SYSLOG_PRI 14      // Facility: User(1) * 8 + Severity: Info(6)
 #define VERSION "1"
 #define HOSTNAME "esp32-node"
@@ -62,9 +62,22 @@ static uint32_t syslog_backlog_count = 0;
 static uint32_t syslog_backlog_dropped = 0;
 static uint32_t queue_peak_depth = 0;
 
+// --- Collector auto-discovery state (learned from UDP broadcast beacon) ---
+static volatile bool collector_discovered = false;
+static volatile uint32_t collector_ip_be = 0;                 // collector IP in network byte order
+static volatile uint16_t collector_log_port = SYSLOG_PORT;    // collector syslog port (learned or default)
+
+// Own STA MAC as a printable string (filled once Wi-Fi has started), used in syslog + discovery
+static char sta_mac_str[18] = "00:00:00:00:00:00";
+
+// --- On-device 100 ms window aggregation + inference state ---
+static volatile bool attack_detected = false;                 // latest inference result (drives OLED / mitigation)
+static volatile uint32_t last_inference_us = 0;               // most recent inference latency (microseconds)
+
 static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
 static void serial_init(void);
 static void send_syslog_serial(const char *buffer);
+static bool resolve_collector(struct sockaddr_in *dest_addr);
 
 typedef struct{
     uint32_t timestamp; // packet timestamp
@@ -112,6 +125,27 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
             xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
         }
     }
+}
+
+// Resolve the current collector destination.
+// Prefers an auto-discovered collector; optionally falls back to a static IP.
+// Returns false when no destination is known yet (caller should buffer to backlog).
+static bool resolve_collector(struct sockaddr_in *dest_addr)
+{
+    dest_addr->sin_family = AF_INET;
+    if (collector_discovered) {
+        dest_addr->sin_addr.s_addr = collector_ip_be;
+        dest_addr->sin_port = htons(collector_log_port);
+        return true;
+    }
+#if !ENABLE_AUTO_DISCOVERY || (defined(COLLECTOR_FALLBACK_IP))
+    if (sizeof(COLLECTOR_FALLBACK_IP) > 1) { // non-empty string literal
+        dest_addr->sin_addr.s_addr = inet_addr(COLLECTOR_FALLBACK_IP);
+        dest_addr->sin_port = htons(SYSLOG_PORT);
+        return (dest_addr->sin_addr.s_addr != INADDR_NONE);
+    }
+#endif
+    return false;
 }
 
 // Function to send syslog message via UDP to a remote server (such as kiwi syslog server)
@@ -191,6 +225,73 @@ static void flush_syslog_backlog(int sock, struct sockaddr_in *dest_addr)
         ESP_LOGW(TAG2, "Syslog backlog dropped %lu messages while offline", syslog_backlog_dropped);
         syslog_backlog_dropped = 0;
     }
+}
+
+// Listen for the collector's UDP broadcast beacon and learn its IP automatically.
+// This removes the need to hard-code the collector IP when changing locations.
+static void collector_discovery_task(void *arg)
+{
+    (void)arg;
+#if ENABLE_AUTO_DISCOVERY
+    int dsock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (dsock < 0) {
+        ESP_LOGE(TAG, "Discovery socket create failed: errno %d", errno);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int reuse = 1;
+    setsockopt(dsock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    struct sockaddr_in listen_addr;
+    memset(&listen_addr, 0, sizeof(listen_addr));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    listen_addr.sin_port = htons(DISCOVERY_PORT);
+    if (bind(dsock, (struct sockaddr *)&listen_addr, sizeof(listen_addr)) < 0) {
+        ESP_LOGE(TAG, "Discovery bind failed: errno %d", errno);
+        close(dsock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Collector discovery listening on UDP :%d (magic '%s')", DISCOVERY_PORT, DISCOVERY_MAGIC);
+
+    char buf[128];
+    struct sockaddr_in src;
+    socklen_t src_len = sizeof(src);
+    const size_t magic_len = strlen(DISCOVERY_MAGIC);
+
+    while (1) {
+        int n = recvfrom(dsock, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&src, &src_len);
+        if (n <= 0) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+        buf[n] = '\0';
+        if (strncmp(buf, DISCOVERY_MAGIC, magic_len) != 0) {
+            continue;
+        }
+
+        uint32_t new_ip = src.sin_addr.s_addr;
+        uint16_t new_port = SYSLOG_PORT;
+        char *p = strstr(buf, "log=");
+        if (p) {
+            int parsed = atoi(p + 4);
+            if (parsed > 0 && parsed < 65536) new_port = (uint16_t)parsed;
+        }
+
+        if (!collector_discovered || collector_ip_be != new_ip || collector_log_port != new_port) {
+            collector_ip_be = new_ip;
+            collector_log_port = new_port;
+            collector_discovered = true;
+            ESP_LOGI(TAG, "Discovered collector at %s:%u", inet_ntoa(src.sin_addr), new_port);
+        }
+    }
+#else
+    ESP_LOGI(TAG, "Auto-discovery disabled; using static collector %s", COLLECTOR_FALLBACK_IP);
+    vTaskDelete(NULL);
+#endif
 }
 
 // WiFi scanning task
@@ -275,14 +376,23 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
         uint8_t fc_subtype = (fc0 >> 4) & 0xF;
         if (frame_type == 0) { // Management frames
             switch (fc_subtype) {
-                case 8:
-                    strcpy(info.subtype, "BEACON");
-                    break;
                 case 4:
                     strcpy(info.subtype, "PROBE_REQ");
                     break;
                 case 5:
                     strcpy(info.subtype, "PROBE_RESP");
+                    break;
+                case 8:
+                    strcpy(info.subtype, "BEACON");
+                    break;
+                case 10:
+                    strcpy(info.subtype, "DISASSOC");
+                    break;
+                case 11:
+                    strcpy(info.subtype, "AUTH");     // proxy for EAP / auth-based frames
+                    break;
+                case 12:
+                    strcpy(info.subtype, "DEAUTH");
                     break;
                 default:
                     strcpy(info.subtype, "MGMT_OTHER");
@@ -323,12 +433,13 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
     // format: <PRI>1 TIMESTAMP HOSTNAME APPNAME PROCID MSGID MSG
     snprintf(buf, size, 
         "<%d>1 %s.%03ldZ %s %s - - "
-        "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\"] "
+        "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\"] "
         "Deauth_Detection_Heartbeat\n",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, info->ipat, info->seq_ctrl, heap,
         esp_get_minimum_free_heap_size(), uptime_ms, wifi_reconnect_count, queue_peak_depth,
-        udp_send_failure_total, syslog_backlog_count, syslog_backlog_dropped);
+        udp_send_failure_total, syslog_backlog_count, syslog_backlog_dropped,
+        sta_mac_str, attack_detected ? 1 : 0);
 }
 
 // --- Simple HTTP server for testing SYN flood impact ---
@@ -382,6 +493,67 @@ static void heap_logger_task(void *arg)
 }
 
 
+// ---- Phase 5: passive detection -> active response (HIPS) ----
+// Application-layer mitigation invoked on a high-confidence attack window.
+// Rate-limited so a sustained attack does not spam actions.
+#define MITIGATION_BLACKLIST_MAX 16
+static uint8_t mitigation_blacklist[MITIGATION_BLACKLIST_MAX][6];
+static uint32_t mitigation_blacklist_count = 0;
+static uint32_t mitigation_events_total = 0;
+static int64_t last_mitigation_us = 0;
+
+static bool mac_is_blacklisted(const uint8_t mac[6])
+{
+    for (uint32_t i = 0; i < mitigation_blacklist_count; i++) {
+        if (memcmp(mitigation_blacklist[i], mac, 6) == 0) return true;
+    }
+    return false;
+}
+
+static int64_t last_hips_disconnect_us = 0;
+
+static void nids_mitigate(const nids_pkt_info_t *info)
+{
+    int64_t now = esp_timer_get_time();
+    // Rate-limit mitigation actions to at most once every 2 s.
+    if (last_mitigation_us != 0 && (now - last_mitigation_us) < 2000000) {
+        return;
+    }
+    last_mitigation_us = now;
+    mitigation_events_total++;
+
+    // 1) Application-layer MAC blacklist (observable via logs / collector).
+    //    As a STA the ESP32 cannot drop 802.11 frames in HW, so this is the
+    //    enforcement signal for the AP / demo, and a durable local record.
+    if (info && !mac_is_blacklisted(info->src_mac) &&
+        mitigation_blacklist_count < MITIGATION_BLACKLIST_MAX) {
+        memcpy(mitigation_blacklist[mitigation_blacklist_count], info->src_mac, 6);
+        mitigation_blacklist_count++;
+        ESP_LOGW(TAG2, "[HIPS] Blacklisted attacker %02X:%02X:%02X:%02X:%02X:%02X (total=%lu)",
+                 info->src_mac[0], info->src_mac[1], info->src_mac[2],
+                 info->src_mac[3], info->src_mac[4], info->src_mac[5],
+                 (unsigned long)mitigation_blacklist_count);
+    }
+
+    // 2) Exit modem sleep so the RX path stays awake and backlog flushes faster.
+    esp_wifi_set_ps(WIFI_PS_NONE);
+
+    // 3) Optional quarantine: brief disconnect to shed poisoned state / flood.
+#if HIPS_ENABLE_DISCONNECT
+    if (last_hips_disconnect_us == 0 ||
+        (now - last_hips_disconnect_us) > (int64_t)HIPS_DISCONNECT_COOLDOWN_MS * 1000) {
+        last_hips_disconnect_us = now;
+        ESP_LOGW(TAG2, "[HIPS] Quarantine: temporary Wi-Fi disconnect (event #%lu)",
+                 (unsigned long)mitigation_events_total);
+        wifi_connected = false;
+        esp_wifi_disconnect();
+        // Reconnect is handled by the existing WIFI_EVENT_STA_DISCONNECTED handler.
+    }
+#else
+    (void)now;
+#endif
+}
+
 void nids_analysis_task(void* arg){
     nids_pkt_info_t info;
     char syslog_buffer[256];
@@ -394,11 +566,18 @@ void nids_analysis_task(void* arg){
     static int8_t last_rssi = 0;
     static uint32_t last_ipat = 0;
 
-    // Initialize persistent UDP socket for syslog transmission if in SYSlOG_MODE
+    // --- On-device 100 ms window aggregation state (feeds the edge inference model) ---
+    const int64_t WINDOW_US = 100000; // 100 ms sliding epoch (matches the dataset methodology)
+    int64_t window_start_us = esp_timer_get_time();
+    uint32_t w_total = 0, w_beacon = 0, w_deauth = 0, w_probe = 0, w_auth = 0;
+    int32_t w_rssi_sum = 0, w_snr_sum = 0;
+    int64_t w_rssi_sq_sum = 0;
+    uint32_t w_rssi_cnt = 0;
+
+    // Destination is resolved per send from the auto-discovered collector (see resolve_collector).
     struct sockaddr_in dest_addr;
-    dest_addr.sin_addr.s_addr = inet_addr(YOUR_CPU_IP_ADDR); // update with your syslog server IP (laptop relay)
+    memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(1514);                        // relay listening on 1514; relay will forward to Pi 514
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     if (sock < 0) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
@@ -424,39 +603,111 @@ void nids_analysis_task(void* arg){
             // Track latest RSSI and IPAT for OLED display
             last_rssi = info.rssi;
             last_ipat = info.ipat;
+
+            // ---- 100 ms window aggregation feeding the on-device inference model ----
+            w_total++;
+            w_rssi_sum += info.rssi;
+            w_rssi_sq_sum += (int64_t)info.rssi * info.rssi;
+            w_snr_sum += info.snr;
+            w_rssi_cnt++;
+            if (strcmp(info.subtype, "BEACON") == 0)          w_beacon++;
+            else if (strcmp(info.subtype, "DEAUTH") == 0)     w_deauth++;
+            else if (strcmp(info.subtype, "DISASSOC") == 0)   w_deauth++;
+            else if (strncmp(info.subtype, "PROBE", 5) == 0)  w_probe++;
+            else if (strcmp(info.subtype, "AUTH") == 0)       w_auth++;
+
+            int64_t win_now_us = esp_timer_get_time();
+            if ((win_now_us - window_start_us) >= WINDOW_US) {
+                double dt = (double)(win_now_us - window_start_us) / 1000000.0;
+                if (dt <= 0) dt = 0.1;
+                double rssi_mean = w_rssi_cnt ? (double)w_rssi_sum / w_rssi_cnt : 0.0;
+                double rssi_var = 0.0;
+                if (w_rssi_cnt > 0) {
+                    double mean_sq = (double)w_rssi_sq_sum / w_rssi_cnt;
+                    rssi_var = mean_sq - rssi_mean * rssi_mean;
+                    if (rssi_var < 0) rssi_var = 0;
+                }
+
+                nids_window_features_t f;
+                f.total_packets  = (double)w_total;
+                f.packet_density = (double)w_total / dt;
+                f.beacon_packets = (double)w_beacon;
+                f.deauth_packets = (double)w_deauth;
+                f.probe_packets  = (double)w_probe;
+                f.auth_packets   = (double)w_auth;
+                f.rssi_mean      = rssi_mean;
+                f.rssi_var       = rssi_var;
+                f.snr_mean       = w_rssi_cnt ? (double)w_snr_sum / w_rssi_cnt : 0.0;
+                f.heap           = (double)esp_get_free_heap_size();
+                f.minheap        = (double)esp_get_minimum_free_heap_size();
+                f.reconn         = (double)wifi_reconnect_count;
+                f.qpeak          = (double)queue_peak_depth;
+                f.udpfail        = (double)udp_send_failure_total;
+                f.backlog        = (double)syslog_backlog_count;
+
+                int64_t t0 = esp_timer_get_time();
+                int pred = nids_predict(&f);
+                last_inference_us = (uint32_t)(esp_timer_get_time() - t0);
+                attack_detected = (pred != 0);
+
+                if (attack_detected) {
+                    ESP_LOGW(TAG2, "[INFERENCE] attack window: pkts=%lu deauth=%lu density=%.0f heap=%.0f (%lu us)",
+                             (unsigned long)w_total, (unsigned long)w_deauth, f.packet_density, f.heap,
+                             (unsigned long)last_inference_us);
+                    nids_mitigate(&info); // Phase 5 active-response hook (HIPS)
+                }
+
+                // reset accumulator for next window
+                window_start_us = win_now_us;
+                w_total = w_beacon = w_deauth = w_probe = w_auth = 0;
+                w_rssi_sum = w_snr_sum = 0; w_rssi_sq_sum = 0; w_rssi_cnt = 0;
+            }
             
-            if (wifi_connected && SYSlOG_MODE == 1 && sock >= 0) {
+            // Resolve the collector destination for UDP mode (auto-discovered, else static fallback).
+            bool udp_ready = false;
+            if (SYSlOG_MODE == 1 && sock >= 0) {
+                udp_ready = resolve_collector(&dest_addr);
+            }
+
+            if (wifi_connected && SYSlOG_MODE == 1 && sock >= 0 && udp_ready) {
                 flush_syslog_backlog(sock, &dest_addr);
             }
 
-            // send only when Wi-Fi is available; otherwise keep a local backlog
-            if(wifi_connected && pkt_count % send_interval_packets == 0){
+            // Emit one record every send_interval_packets. When the collector is not
+            // known yet (or Wi-Fi is down) records are buffered and flushed on discovery.
+            if(pkt_count % send_interval_packets == 0){
                 uint32_t free_heap = esp_get_free_heap_size();
                 int64_t uptime_ms = esp_timer_get_time() / 1000; // uptime in milliseconds
                 stack_mark = uxTaskGetStackHighWaterMark(NULL); // check stack again before sending
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms);
 
-                if(SYSlOG_MODE == 1 && sock >= 0){
-                    if (!send_syslog_udp(sock, &dest_addr, syslog_buffer)) {
-                        syslog_backlog_push(syslog_buffer);
+                if(SYSlOG_MODE == 1){
+                    if (wifi_connected && sock >= 0 && udp_ready) {
+                        if (!send_syslog_udp(sock, &dest_addr, syslog_buffer)) {
+                            syslog_backlog_push(syslog_buffer);
+                        }
+                    } else {
+                        syslog_backlog_push(syslog_buffer); // buffer until Wi-Fi up + collector discovered
                     }
                 } else if (SYSlOG_MODE == 2) {
-                    send_syslog_serial(syslog_buffer);
+                    send_syslog_serial(syslog_buffer);   // serial path needs no IP at all (location-independent fallback)
                 } else {
                     printf("%s\n", syslog_buffer);
                 }
-            } else if (!wifi_connected && pkt_count % 100 == 0) {
-                ESP_LOGW(TAG2, "WiFi down; deferring syslog sends (pkt_count=%lu)", pkt_count);
-            } else if (!wifi_connected) {
-                uint32_t free_heap = esp_get_free_heap_size();
-                int64_t uptime_ms = esp_timer_get_time() / 1000;
-                encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms);
-                syslog_backlog_push(syslog_buffer);
+            }
+
+            if (!wifi_connected && pkt_count % 500 == 0) {
+                ESP_LOGW(TAG2, "WiFi down; buffering syslog (backlog=%lu)", syslog_backlog_count);
+            } else if (SYSlOG_MODE == 1 && !collector_discovered && pkt_count % 500 == 0) {
+                ESP_LOGW(TAG2, "Waiting for collector beacon on UDP :%d (backlog=%lu)", DISCOVERY_PORT, syslog_backlog_count);
             }
 
             if(pkt_count % 100 == 0){ // print info every 100 packets
                 uint32_t free_heap = esp_get_free_heap_size();
-                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu)", pkt_count, send_interval_packets, free_heap);
+                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu, infer=%lu us, attack=%d, hips=%lu)",
+                         pkt_count, send_interval_packets, free_heap,
+                         (unsigned long)last_inference_us, attack_detected ? 1 : 0,
+                         (unsigned long)mitigation_events_total);
                 printf("Stack remain: %lu bytes\n", (uint32_t)stack_mark);
                 if(!oled_inited){
                     ESP_LOGI(TAG, "Attempting OLED init...");
@@ -471,7 +722,7 @@ void nids_analysis_task(void* arg){
                     int64_t now_ms = esp_timer_get_time() / 1000;
                     if ((now_ms - last_oled_update_ms) >= OLED_UPDATE_MIN_INTERVAL_MS) {
                         uint8_t current_channel = 11;  // currently fixed at ch 11
-                        bool attack_flag = false;       // TODO: set to true when attack detected
+                        bool attack_flag = attack_detected; // driven by on-device inference
                         oled_show_stats(wifi_connected, pkt_count, send_interval_packets, free_heap,
                                        last_rssi, last_ipat, stack_mark, current_channel,
                                        wifi_reconnect_count, queue_depth, attack_flag);
@@ -494,7 +745,11 @@ void app_main(void) {
     // get the last reset reason
     esp_reset_reason_t reason = esp_reset_reason();
     ESP_LOGI("HIDS", "Last Reset Reason: %d", reason);
-    ESP_LOGI(TAG, "Syslog server target: %s:1514", YOUR_CPU_IP_ADDR);
+#if ENABLE_AUTO_DISCOVERY
+    ESP_LOGI(TAG, "Collector: auto-discovery via UDP :%d (no IP hard-coding needed)", DISCOVERY_PORT);
+#else
+    ESP_LOGI(TAG, "Collector: static %s:%d", COLLECTOR_FALLBACK_IP, SYSLOG_PORT);
+#endif
 
     // init NVS (WiFi driver needs it)
     esp_err_t ret = nvs_flash_init();
@@ -555,6 +810,17 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    // Cache our own STA MAC as a string; embedded in syslog so the collector can
+    // record this node's live IP+MAC into live_state.json for the attack scripts.
+    {
+        uint8_t mac[6] = {0};
+        if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+            snprintf(sta_mac_str, sizeof(sta_mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+            ESP_LOGI(TAG, "STA MAC: %s", sta_mac_str);
+        }
+    }
+
     ESP_LOGI(TAG, "Connecting to WiFi...");
     esp_wifi_connect(); // start connecting...
     // Wait for IP_EVENT_STA_GOT_IP via event group instead of fixed delay
@@ -573,6 +839,11 @@ void app_main(void) {
         }
         esp_wifi_set_promiscuous(true);
     }
+
+    // Start collector auto-discovery listener (learns collector IP from UDP beacon)
+#if ENABLE_AUTO_DISCOVERY
+    xTaskCreate(collector_discovery_task, "collector_discovery", 3072, NULL, 5, NULL);
+#endif
 
     // Start a simple HTTP server (for SYN flood resource testing)
     start_webserver();

@@ -1,85 +1,101 @@
-# macOS
+# ============================================================
+# ESP32 NIDS — files that must NOT go to GitHub
+# ============================================================
+
+# --- OS / editor ---
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Directory metadata
 .directory
-
-# Temporary files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 *~
 *.swp
 *.swo
 *.bak
 *.tmp
+*.user
+*.workspace
+*.suo
+*.sln.docstates
 
-# Log files
+# --- Runtime / local state ---
 *.log
 *.log.*
-nids_dataset_*.csv
-
-# Runtime captures / temporary exports
 captures/
 logs/
+live_state.json
+data/live_state.json
+data/live_state.json.tmp
 
-# Build artifacts and directories
+# --- Datasets (keep local; share big sets via Google Drive) ---
+data/raw/**
+data/windows/**
+!data/raw/.gitkeep
+!data/windows/.gitkeep
+!data/README.md
+nids_dataset_*.csv
+nids_windows_*.csv
+*.csv
+
+# --- Secrets (never push) ---
+*login*
+*password*
+*.pem
+*.key
+.env
+.env.*
+archive/raspberry*
+archive/**/*login*
+
+# --- Archive: keep only README pointers, not old code / secrets ---
+archive/**
+!archive/README.md
+!archive/duplicates/
+!archive/duplicates/README.md
+
+# --- ESP-IDF build (everyone generates locally) ---
 **/build/
 build/
 *.o
 *.a
 *.out
-*.exe # For any host-side utilities compiled on Windows
-
-# ESP-IDF specific build outputs
+*.exe
 *.bin
 *.elf
 *.map
-flasher_args.json # Generated in build directory
-sdkconfig.old
+flasher_args.json
 sdkconfig
-
-# ESP-IDF dependencies
-# For older versions or manual component management
+sdkconfig.old
+managed_components/
+.espressif/
 /components/.idf/
 **/components/.idf/
-# For modern ESP-IDF component manager
-managed_components/
-# If ESP-IDF tools are installed/referenced locally to the project
-.espressif/
-
-# CMake generated files
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 install_manifest.txt
 CTestTestfile.cmake
+compile_commands.json
 
-# Python environment files
+# --- Python ---
 *.pyc
 *.pyo
 *.pyd
 __pycache__/
 *.egg-info/
 dist/
-
-# Virtual environment folders
 venv/
 .venv/
 env/
 
-# Language Servers
+# --- IDE / language servers (local) ---
 .clangd/
 .ccls-cache/
-compile_commands.json
+# Uncomment if you do not want to share IDE settings:
+# .vscode/
+# .devcontainer/
 
-# Windows specific
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# User-specific configuration files
-*.user
-*.workspace # General workspace files, can be from various tools
-*.suo       # Visual Studio Solution User Options
-*.sln.docstates # Visual Studio
-*.pdf
+# --- Optional: large report binaries (prefer Drive) ---
+# docs/**/*.pdf

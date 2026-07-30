@@ -1,8 +1,12 @@
 import csv
+import os
 import re
 import select
 import socket
 import json
+import sys
+import threading
+import time
 from datetime import datetime, timedelta
 
 RESET = "\033[0m"
@@ -15,8 +19,21 @@ UDP_IP = "0.0.0.0"
 LOG_PORT = 1514
 CONTROL_PORT = 9999
 
+# --- Auto-discovery: broadcast a beacon so the ESP32 finds us without a hard-coded IP ---
+DISCOVERY_PORT = 5005
+DISCOVERY_MAGIC = "NIDS_DISCOVERY"
+BEACON_INTERVAL_SEC = 1.5
+
+# Allow running as `python host/collector/nids_collector.py`
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from host.paths import DATA_RAW, LIVE_STATE_FILE, ensure_data_dirs  # noqa: E402
+
+ensure_data_dirs()
 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-CSV_FILE = f"nids_dataset_{timestamp_str}.csv"
+CSV_FILE = os.path.join(DATA_RAW, f"nids_dataset_{timestamp_str}.csv")
 
 regex = re.compile(
     r'\[meta@(?P<pen>[^ ]+) '
@@ -32,12 +49,59 @@ regex = re.compile(
     r'qpeak="(?P<qpeak>[^"]+)" '
     r'udpfail="(?P<udpfail>[^"]+)" '
     r'backlog="(?P<backlog>[^"]+)" '
-    r'dropped="(?P<dropped>[^"]+)"\]'
+    r'dropped="(?P<dropped>[^"]+)"'
+    r'(?: host_mac="(?P<host_mac>[^"]+)")?'   # optional (newer firmware)
+    r'(?: attack="(?P<attack>[^"]+)")?'       # optional on-device inference result
+    r'\]'
 )
 
 
 def color_text(text, color):
     return f"{color}{text}{RESET}"
+
+
+def get_local_ip_towards(peer_ip):
+    """Best-effort discovery of the local IP that would be used to reach peer_ip."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect((peer_ip, 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return None
+
+
+def write_live_state(esp32_ip, esp32_mac):
+    """Persist the ESP32's current IP/MAC so attack scripts never need hard-coded IPs."""
+    state = {
+        "esp32_ip": esp32_ip,
+        "esp32_mac": esp32_mac,
+        "collector_ip": get_local_ip_towards(esp32_ip) if esp32_ip else None,
+        "log_port": LOG_PORT,
+        "control_port": CONTROL_PORT,
+        "updated": datetime.now().isoformat(),
+    }
+    tmp = LIVE_STATE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+    os.replace(tmp, LIVE_STATE_FILE)
+    return state
+
+
+def beacon_broadcaster(stop_event):
+    """Periodically broadcast a discovery beacon so the ESP32 learns our IP."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    payload = f"{DISCOVERY_MAGIC} v1 log={LOG_PORT}".encode()
+    print(color_text(f"   📣 Broadcasting discovery beacon on UDP :{DISCOVERY_PORT} every {BEACON_INTERVAL_SEC}s", CYAN))
+    while not stop_event.is_set():
+        try:
+            sock.sendto(payload, ("255.255.255.255", DISCOVERY_PORT))
+        except OSError as e:
+            print(color_text(f"   ⚠️  beacon send failed: {e}", YELLOW))
+        stop_event.wait(BEACON_INTERVAL_SEC)
+    sock.close()
 
 
 def format_status(label, attack_type="NONE"):
@@ -61,6 +125,14 @@ def start_receiver():
     min_offset = None     # Estimated base offset (boot time) of the ESP32 in collector's clock
     last_uptime_sec = 0.0
 
+    # Live ESP32 identity tracking (for auto-discovery / live_state.json)
+    last_live_esp32 = (None, None)  # (ip, mac)
+
+    # Start the discovery beacon so the ESP32 can find us with no hard-coded IP
+    stop_event = threading.Event()
+    beacon_thread = threading.Thread(target=beacon_broadcaster, args=(stop_event,), daemon=True)
+    beacon_thread.start()
+
     log_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     log_sock.bind((UDP_IP, LOG_PORT))
     log_sock.setblocking(False)
@@ -79,7 +151,7 @@ def start_receiver():
         writer.writerow([
             "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
             "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
-            "label", "attack_type", "timestamp"
+            "host_mac", "pred_attack", "label", "attack_type", "timestamp"
         ])
 
         while True:
@@ -161,6 +233,17 @@ def start_receiver():
 
                     d = match.groupdict()
 
+                    # Record the ESP32's live IP (packet source) + MAC (from syslog) for
+                    # the attack scripts. Written only when it changes.
+                    esp32_ip = addr[0]
+                    esp32_mac = d.get("host_mac")
+                    if (esp32_ip, esp32_mac) != last_live_esp32:
+                        state = write_live_state(esp32_ip, esp32_mac)
+                        last_live_esp32 = (esp32_ip, esp32_mac)
+                        print(color_text(
+                            f"   🛰️  ESP32 live at {esp32_ip} (mac={esp32_mac}); wrote {os.path.basename(LIVE_STATE_FILE)}",
+                            CYAN))
+
                     # Compute generation time of the syslog on ESP32
                     try:
                         uptime_sec = float(d["uptime"]) / 1000.0
@@ -198,7 +281,8 @@ def start_receiver():
                         d["pen"], d.get("subtype", ""), d["rssi"], d["snr"], d["ipat"],
                         d["seq"], d["heap"], d["minheap"], d["uptime"],
                         d["reconn"], d["qpeak"], d["udpfail"], d["backlog"],
-                        d["dropped"], packet_label, packet_attack_type, gen_time.isoformat(),
+                        d["dropped"], d.get("host_mac", ""), d.get("attack", ""),
+                        packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
                     f.flush()
 

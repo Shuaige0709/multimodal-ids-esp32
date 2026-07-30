@@ -1,0 +1,9 @@
+numpy>=1.24
+matplotlib>=3.7
+scikit-learn>=1.3
+m2cgen>=0.10
+pandas>=2.0
+# Optional (used for multi-model comparison if installed):
+# xgboost
+# lightgbm
+# pyserial  # only needed for scripts/serial_collector.py

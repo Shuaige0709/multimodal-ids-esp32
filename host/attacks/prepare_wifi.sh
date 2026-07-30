@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# prepare_wifi.sh - Kali Wi-Fi / Host-only prep (restored from archive/set_wifi.sh)
+#
+# Usage:
+#   sudo ./host/attacks/prepare_wifi.sh monitor   # before deauth
+#   sudo ./host/attacks/prepare_wifi.sh managed   # before SYN / ARP (after deauth)
+#   sudo ./host/attacks/prepare_wifi.sh status
+#
+# Env overrides:
+#   NIDS_WIFI_IFACE   default wlan0
+#   NIDS_MON_IFACE    default wlan0mon
+#   NIDS_WIFI_CHANNEL default 11
+#   NIDS_HOSTONLY_IFACE default eth0   (VMnet1 side inside Kali)
+#   NIDS_HOSTONLY_IP    default 192.168.220.50/24
+#   NIDS_SKIP_HOSTONLY=1  skip eth0 reconfiguration
+set -euo pipefail
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=netconfig.sh
+source "${DIR}/netconfig.sh"
+
+WIFI_IFACE="${NIDS_WIFI_IFACE:-wlan0}"
+MON_IFACE="${NIDS_MON_IFACE:-wlan0mon}"
+CHANNEL="${NIDS_WIFI_CHANNEL:-11}"
+HOSTONLY_IFACE="${NIDS_HOSTONLY_IFACE:-eth0}"
+HOSTONLY_CIDR="${NIDS_HOSTONLY_IP:-192.168.220.50/24}"
+MODE="${1:-status}"
+
+need_root() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    echo "[prepare_wifi] please run with sudo" >&2
+    exit 1
+  fi
+}
+
+iface_exists() {
+  ip link show "$1" >/dev/null 2>&1
+}
+
+setup_hostonly() {
+  if [[ "${NIDS_SKIP_HOSTONLY:-0}" == "1" ]]; then
+    echo "[prepare_wifi] skip host-only (${HOSTONLY_IFACE})"
+    return 0
+  fi
+  if ! iface_exists "$HOSTONLY_IFACE"; then
+    echo "[prepare_wifi] WARN: ${HOSTONLY_IFACE} not found — check VMware Host-only (VMnet1)"
+    return 0
+  fi
+  echo "[prepare_wifi] host-only ${HOSTONLY_IFACE} -> ${HOSTONLY_CIDR}"
+  ip addr flush dev "$HOSTONLY_IFACE" 2>/dev/null || true
+  ip addr add "$HOSTONLY_CIDR" dev "$HOSTONLY_IFACE"
+  ip link set "$HOSTONLY_IFACE" up
+  echo "[prepare_wifi] label target should be reachable (often ${LABEL_HOST})"
+  ping -c 1 -W 1 "${LABEL_HOST}" >/dev/null 2>&1 \
+    && echo "[prepare_wifi] ping ${LABEL_HOST} OK" \
+    || echo "[prepare_wifi] WARN: cannot ping ${LABEL_HOST} — fix NIDS_LABEL_HOST / VMnet1"
+}
+
+cmd_monitor() {
+  need_root
+  setup_hostonly
+  echo "[prepare_wifi] enabling monitor on ${WIFI_IFACE} ..."
+  airmon-ng check kill || true
+  if iface_exists "$MON_IFACE"; then
+    echo "[prepare_wifi] ${MON_IFACE} already present"
+  else
+    airmon-ng start "$WIFI_IFACE"
+  fi
+  # Some drivers name the mon iface differently; prefer existing mon*
+  if ! iface_exists "$MON_IFACE"; then
+    alt="$(ip -o link show | awk -F': ' '/mon/ {print $2; exit}')"
+    if [[ -n "${alt:-}" ]]; then
+      echo "[prepare_wifi] using detected mon iface: ${alt} (export NIDS_MON_IFACE=${alt})"
+      MON_IFACE="$alt"
+    fi
+  fi
+  iwconfig "$MON_IFACE" channel "$CHANNEL" 2>/dev/null \
+    || iw dev "$MON_IFACE" set channel "$CHANNEL" 2>/dev/null \
+    || echo "[prepare_wifi] WARN: could not set channel ${CHANNEL}"
+  echo "==========================================="
+  echo " Attack iface : ${MON_IFACE} (channel ${CHANNEL})"
+  echo " Label path   : ${HOSTONLY_IFACE} ${HOSTONLY_CIDR} -> ${LABEL_HOST}:${LABEL_PORT}"
+  echo " Next         : sudo ./host/attacks/attack_deauth.sh"
+  echo " After deauth : sudo ./host/attacks/prepare_wifi.sh managed"
+  echo "==========================================="
+}
+
+cmd_managed() {
+  need_root
+  echo "[prepare_wifi] restoring managed mode ..."
+  if iface_exists "$MON_IFACE"; then
+    airmon-ng stop "$MON_IFACE" || true
+  fi
+  # Revive NetworkManager so wlan can join the hotspot again
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart NetworkManager 2>/dev/null || true
+  fi
+  setup_hostonly
+  echo "==========================================="
+  echo " Managed iface : ${WIFI_IFACE} (join SSID '${SSID}' before SYN/ARP)"
+  echo " Label path    : ${HOSTONLY_IFACE} -> ${LABEL_HOST}:${LABEL_PORT}"
+  echo " Next          : nmcli dev wifi connect '${SSID}' ..."
+  echo "                 sudo ./host/attacks/syn_flood.sh"
+  echo "                 sudo ./host/attacks/arpspoof.sh"
+  echo "==========================================="
+}
+
+cmd_status() {
+  echo "=== prepare_wifi status ==="
+  echo " WIFI_IFACE=${WIFI_IFACE}  MON_IFACE=${MON_IFACE}  CHANNEL=${CHANNEL}"
+  echo " HOSTONLY=${HOSTONLY_IFACE} ${HOSTONLY_CIDR}  LABEL=${LABEL_HOST}:${LABEL_PORT}"
+  ip -br link 2>/dev/null || true
+  echo
+  iwconfig 2>/dev/null | head -n 40 || true
+}
+
+case "$MODE" in
+  monitor) cmd_monitor ;;
+  managed|restore) cmd_managed ;;
+  status) cmd_status ;;
+  -h|--help)
+    echo "Usage: sudo $0 {monitor|managed|status}"
+    exit 0
+    ;;
+  *)
+    echo "Unknown mode: $MODE (use monitor|managed|status)" >&2
+    exit 1
+    ;;
+esac
