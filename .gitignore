@@ -90,12 +90,14 @@ venv/
 .venv/
 env/
 
-# --- IDE / language servers (local) ---
+# --- IDE / language servers (local — do not share) ---
+.vscode/
+.clangd
 .clangd/
 .ccls-cache/
-# Uncomment if you do not want to share IDE settings:
-# .vscode/
-# .devcontainer/
+.devcontainer/
+.idea/
+*.code-workspace
 
 # --- Optional: large report binaries (prefer Drive) ---
 # docs/**/*.pdf
