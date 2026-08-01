@@ -72,12 +72,78 @@ def get_local_ip_towards(peer_ip):
         return None
 
 
-def write_live_state(esp32_ip, esp32_mac):
-    """Persist the ESP32's current IP/MAC so attack scripts never need hard-coded IPs."""
+def list_local_ipv4():
+    """Collect non-loopback IPv4 addresses on this host (best-effort)."""
+    found = []
+
+    def _add(ip):
+        if ip and not ip.startswith("127.") and ip not in found:
+            found.append(ip)
+
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            _add(info[4][0])
+    except OSError:
+        pass
+    # Probe a few destinations to surface interface addresses (VMnet1, NAT, Wi-Fi, …)
+    for peer in ("8.8.8.8", "192.168.124.2", "192.168.220.50", "192.168.1.1"):
+        _add(get_local_ip_towards(peer))
+    # Linux/Pi: hostname -I lists every interface (wlan0 + eth0), which getaddrinfo often misses
+    try:
+        import subprocess
+        out = subprocess.check_output(["hostname", "-I"], text=True, timeout=2)
+        for tok in out.split():
+            _add(tok)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return found
+
+
+def guess_label_host(esp32_ip=None):
+    """
+    IP that Kali should send START/STOP labels to.
+
+    Often different from the Wi-Fi IP used for ESP32 syslog:
+      - Windows collector: VMnet1 host-only (e.g. 192.168.124.1)
+      - Pi collector: usually the Pi address Kali can route to
+    Override with NIDS_LABEL_ADVERTISE (or NIDS_LABEL_HOST) if guessing is wrong.
+    """
+    forced = os.environ.get("NIDS_LABEL_ADVERTISE") or os.environ.get("NIDS_LABEL_HOST")
+    if forced:
+        return forced
+
+    syslog_ip = get_local_ip_towards(esp32_ip) if esp32_ip else None
+    esp_prefix = esp32_ip.rsplit(".", 1)[0] if esp32_ip else None
+    candidates = list_local_ipv4()
+
+    # Prefer an address NOT on the ESP32 Wi-Fi subnet (host-only / lab LAN for Kali).
+    for ip in candidates:
+        if ip.startswith("169.254."):
+            continue
+        if esp_prefix and ip.rsplit(".", 1)[0] == esp_prefix:
+            continue
+        if syslog_ip and ip == syslog_ip:
+            continue
+        return ip
+
+    if syslog_ip:
+        return syslog_ip
+    if candidates:
+        return candidates[0]
+    return None
+
+
+def write_live_state(esp32_ip=None, esp32_mac=None):
+    """Persist ESP32 + collector endpoints so attack scripts need no hard-coded IPs."""
+    syslog_ip = get_local_ip_towards(esp32_ip) if esp32_ip else None
+    label_host = guess_label_host(esp32_ip)
     state = {
         "esp32_ip": esp32_ip,
         "esp32_mac": esp32_mac,
-        "collector_ip": get_local_ip_towards(esp32_ip) if esp32_ip else None,
+        # IP ESP32 uses to reach us (hotspot / discovery path)
+        "collector_ip": syslog_ip or label_host,
+        # IP Kali should use for START/STOP (often VMnet1 host-only on Windows)
+        "label_host": label_host,
         "log_port": LOG_PORT,
         "control_port": CONTROL_PORT,
         "updated": datetime.now().isoformat(),
@@ -89,17 +155,41 @@ def write_live_state(esp32_ip, esp32_mac):
     return state
 
 
+def _discovery_targets():
+    """
+    Broadcast destinations for collector discovery.
+
+    Global 255.255.255.255 only goes out the default route interface. On a Pi
+    that is often eth0 while ESP32 is on wlan0 — so also send per-subnet
+    directed broadcasts (x.x.x.255) for every local IPv4 we can see.
+    """
+    targets = [("255.255.255.255", DISCOVERY_PORT)]
+    for ip in list_local_ipv4():
+        parts = ip.split(".")
+        if len(parts) == 4 and not ip.startswith("169.254."):
+            bcast = ".".join(parts[:3] + ["255"])
+            pair = (bcast, DISCOVERY_PORT)
+            if pair not in targets:
+                targets.append(pair)
+    return targets
+
+
 def beacon_broadcaster(stop_event):
     """Periodically broadcast a discovery beacon so the ESP32 learns our IP."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     payload = f"{DISCOVERY_MAGIC} v1 log={LOG_PORT}".encode()
-    print(color_text(f"   📣 Broadcasting discovery beacon on UDP :{DISCOVERY_PORT} every {BEACON_INTERVAL_SEC}s", CYAN))
+    local_ips = list_local_ipv4() or ["(none found)"]
+    print(color_text(
+        f"   📣 Broadcasting discovery beacon on UDP :{DISCOVERY_PORT} every {BEACON_INTERVAL_SEC}s",
+        CYAN))
+    print(color_text(f"   🌐 Local IPv4s: {', '.join(local_ips)}", CYAN))
     while not stop_event.is_set():
-        try:
-            sock.sendto(payload, ("255.255.255.255", DISCOVERY_PORT))
-        except OSError as e:
-            print(color_text(f"   ⚠️  beacon send failed: {e}", YELLOW))
+        for host, port in _discovery_targets():
+            try:
+                sock.sendto(payload, (host, port))
+            except OSError as e:
+                print(color_text(f"   ⚠️  beacon → {host}:{port} failed: {e}", YELLOW))
         stop_event.wait(BEACON_INTERVAL_SEC)
     sock.close()
 
@@ -145,6 +235,18 @@ def start_receiver():
     print(f"   📡 Listening for syslog on port {LOG_PORT}")
     print(f"   🎛️  Listening for control signals on port {CONTROL_PORT}")
     print(f"   💾 Saving to: {CSV_FILE}")
+
+    # Advertise label_host immediately so Kali can read live_state before ESP32 appears
+    boot_state = write_live_state(None, None)
+    print(color_text(
+        f"   🏷️  label_host={boot_state.get('label_host')} "
+        f"(Kali START/STOP → this IP:{CONTROL_PORT}; override with NIDS_LABEL_ADVERTISE)",
+        CYAN))
+    print(color_text(
+        "   ⏳ Waiting for ESP32 syslog… (idle is normal until discovery succeeds)",
+        YELLOW))
+
+    last_idle_hint = time.time()
 
     with open(CSV_FILE, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -229,6 +331,12 @@ def start_receiver():
 
                     match = regex.search(log_line)
                     if not match:
+                        # Truncated / old-format lines used to be dropped silently —
+                        # that looked like "collector idle" even when tcpdump saw UDP.
+                        print(color_text(
+                            f"   ⚠️  syslog parse miss from {addr[0]} "
+                            f"({len(data)}B): {log_line[:160]}",
+                            YELLOW))
                         continue
 
                     d = match.groupdict()
@@ -241,7 +349,9 @@ def start_receiver():
                         state = write_live_state(esp32_ip, esp32_mac)
                         last_live_esp32 = (esp32_ip, esp32_mac)
                         print(color_text(
-                            f"   🛰️  ESP32 live at {esp32_ip} (mac={esp32_mac}); wrote {os.path.basename(LIVE_STATE_FILE)}",
+                            f"   🛰️  ESP32 live at {esp32_ip} (mac={esp32_mac}); "
+                            f"label_host={state.get('label_host')}; "
+                            f"wrote {os.path.basename(LIVE_STATE_FILE)}",
                             CYAN))
 
                     # Compute generation time of the syslog on ESP32
@@ -299,6 +409,15 @@ def start_receiver():
                         f"RSSI={d['rssi']:>4}dBm, SNR={d['snr']:>3}dB, "
                         f"IPAT={d['ipat']:>6}us, HEAP={d['heap']:>6}B | Type: {packet_attack_type}"
                     )
+
+
+            if total_count == 0 and (time.time() - last_idle_hint) >= 15:
+                last_idle_hint = time.time()
+                print(color_text(
+                    "   ⏳ Still no ESP32 syslog. On monitor look for "
+                    "'Discovered collector' or 'Waiting for collector beacon'. "
+                    "Pi + ESP32 must share the same Wi-Fi (SSID in net_config.h).",
+                    YELLOW))
 
 if __name__ == "__main__":
     start_receiver()

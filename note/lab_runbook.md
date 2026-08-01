@@ -97,7 +97,9 @@
 
 ### Label
 
-- `NIDS_LABEL_HOST` = **Pi 的 IP**（整場攻擊都打給同一台 collector）
+- 平常**不用手打** `NIDS_LABEL_HOST`：collector 會寫入 `data/live_state.json` 的 `label_host`，攻擊腳本自動讀。
+- Kali 要能讀到同一份 `live_state.json`（共享資料夾 / 複製 / 同 repo 路徑）。
+- 猜錯時再覆寫：`export NIDS_LABEL_HOST=...`，或在跑 collector 的機器設 `NIDS_LABEL_ADVERTISE=...`。
 
 ### Kali：SSH 還是視窗？
 

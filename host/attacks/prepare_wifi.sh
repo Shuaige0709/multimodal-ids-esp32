@@ -50,10 +50,10 @@ setup_hostonly() {
   ip addr flush dev "$HOSTONLY_IFACE" 2>/dev/null || true
   ip addr add "$HOSTONLY_CIDR" dev "$HOSTONLY_IFACE"
   ip link set "$HOSTONLY_IFACE" up
-  echo "[prepare_wifi] label target should be reachable (often ${LABEL_HOST})"
-  ping -c 1 -W 1 "${LABEL_HOST}" >/dev/null 2>&1 \
-    && echo "[prepare_wifi] ping ${LABEL_HOST} OK" \
-    || echo "[prepare_wifi] WARN: cannot ping ${LABEL_HOST} — fix NIDS_LABEL_HOST / VMnet1"
+  echo "[prepare_wifi] label target should be reachable (often $(get_label_host))"
+  ping -c 1 -W 1 "$(get_label_host)" >/dev/null 2>&1 \
+    && echo "[prepare_wifi] ping $(get_label_host) OK" \
+    || echo "[prepare_wifi] WARN: cannot ping $(get_label_host) — sync live_state or set NIDS_LABEL_HOST"
 }
 
 cmd_monitor() {
@@ -79,7 +79,7 @@ cmd_monitor() {
     || echo "[prepare_wifi] WARN: could not set channel ${CHANNEL}"
   echo "==========================================="
   echo " Attack iface : ${MON_IFACE} (channel ${CHANNEL})"
-  echo " Label path   : ${HOSTONLY_IFACE} ${HOSTONLY_CIDR} -> ${LABEL_HOST}:${LABEL_PORT}"
+  echo " Label path   : ${HOSTONLY_IFACE} ${HOSTONLY_CIDR} -> $(get_label_host):${LABEL_PORT}"
   echo " Next         : sudo ./host/attacks/attack_deauth.sh"
   echo " After deauth : sudo ./host/attacks/prepare_wifi.sh managed"
   echo "==========================================="
@@ -98,7 +98,7 @@ cmd_managed() {
   setup_hostonly
   echo "==========================================="
   echo " Managed iface : ${WIFI_IFACE} (join SSID '${SSID}' before SYN/ARP)"
-  echo " Label path    : ${HOSTONLY_IFACE} -> ${LABEL_HOST}:${LABEL_PORT}"
+  echo " Label path    : ${HOSTONLY_IFACE} -> $(get_label_host):${LABEL_PORT}"
   echo " Next          : nmcli dev wifi connect '${SSID}' ..."
   echo "                 sudo ./host/attacks/syn_flood.sh"
   echo "                 sudo ./host/attacks/arpspoof.sh"
@@ -108,7 +108,7 @@ cmd_managed() {
 cmd_status() {
   echo "=== prepare_wifi status ==="
   echo " WIFI_IFACE=${WIFI_IFACE}  MON_IFACE=${MON_IFACE}  CHANNEL=${CHANNEL}"
-  echo " HOSTONLY=${HOSTONLY_IFACE} ${HOSTONLY_CIDR}  LABEL=${LABEL_HOST}:${LABEL_PORT}"
+  echo " HOSTONLY=${HOSTONLY_IFACE} ${HOSTONLY_CIDR}  LABEL=$(get_label_host):${LABEL_PORT}"
   ip -br link 2>/dev/null || true
   echo
   iwconfig 2>/dev/null | head -n 40 || true

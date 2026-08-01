@@ -12,7 +12,7 @@ _ATTACKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${_ATTACKS_DIR}/../.." && pwd)"
 LIVE_STATE_FILE="${PROJECT_ROOT}/data/live_state.json"
 
-LABEL_HOST="${NIDS_LABEL_HOST:-192.168.220.1}"
+# Ports / Wi-Fi names (LABEL_HOST is resolved lazily — see get_label_host)
 LABEL_PORT="${NIDS_LABEL_PORT:-9999}"
 SSID="${NIDS_SSID:-302}"
 WIFI_IFACE="${NIDS_WIFI_IFACE:-wlan0}"
@@ -35,6 +35,29 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 PY
   fi
 }
+
+get_label_host() {
+  # Priority: explicit env > live_state.label_host > live_state.collector_ip > legacy default
+  if [[ -n "${NIDS_LABEL_HOST:-}" ]]; then
+    echo "$NIDS_LABEL_HOST"
+    return 0
+  fi
+  local h
+  h="$(_json_field label_host)"
+  if [[ -n "$h" && "$h" != "null" ]]; then
+    echo "$h"
+    return 0
+  fi
+  h="$(_json_field collector_ip)"
+  if [[ -n "$h" && "$h" != "null" ]]; then
+    echo "$h"
+    return 0
+  fi
+  echo "192.168.220.1"
+}
+
+# Back-compat name used by older snippets (resolved once at source time if file exists)
+LABEL_HOST="$(get_label_host)"
 
 get_esp32_ip() {
   local ip="${NIDS_ESP32_IP:-$(_json_field esp32_ip)}"
@@ -98,14 +121,15 @@ send_label() {
   # send_label START|STOP [attack_type]
   local status="$1"
   local attack_type="${2:-NONE}"
-  local ts msg
+  local ts msg host
+  host="$(get_label_host)"
   ts="$(date +%s)"
   msg=$(printf '{"status":"%s","attack_type":"%s","timestamp":%s}' "$status" "$attack_type" "$ts")
+  echo "[netconfig] label ${status} -> ${host}:${LABEL_PORT}"
   if command -v nc >/dev/null 2>&1; then
-    printf '%s' "$msg" | nc -u -w1 "$LABEL_HOST" "$LABEL_PORT" || true
+    printf '%s' "$msg" | nc -u -w1 "$host" "$LABEL_PORT" || true
   else
-    # bash /dev/udp fallback
-    printf '%s' "$msg" >"/dev/udp/${LABEL_HOST}/${LABEL_PORT}" || true
+    printf '%s' "$msg" >"/dev/udp/${host}/${LABEL_PORT}" || true
   fi
 }
 
@@ -115,11 +139,13 @@ netconfig_summary() {
   if [[ -f "$LIVE_STATE_FILE" ]]; then
     echo "  ESP32 IP   : $(_json_field esp32_ip)"
     echo "  ESP32 MAC  : $(_json_field esp32_mac)"
+    echo "  label_host : $(_json_field label_host)  (from live_state)"
+    echo "  collector  : $(_json_field collector_ip)  (syslog path)"
   else
     echo "  ESP32 IP   : (missing live_state.json)"
   fi
   echo "  SSID       : $SSID"
-  echo "  Label      : ${LABEL_HOST}:${LABEL_PORT}"
+  echo "  Label      : $(get_label_host):${LABEL_PORT}  (env NIDS_LABEL_HOST overrides)"
   echo "  ifaces     : managed=$WIFI_IFACE  monitor=$MON_IFACE"
 }
 

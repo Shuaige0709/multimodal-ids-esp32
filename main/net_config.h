@@ -30,15 +30,16 @@
  * last resort if no beacon has been heard yet AND this string is non-empty.
  * Leave as "" to rely purely on auto-discovery.
  */
-#define COLLECTOR_FALLBACK_IP ""
+/* Pi wlan0 on hotspot "302" (see hostname -I). Change if Pi gets a new DHCP lease. */
+#define COLLECTOR_FALLBACK_IP "10.168.114.181"
 
 /*
- * HIPS (Host-based Intrusion Prevention): when on-device inference flags an
- * attack window, optionally quarantine by briefly disconnecting Wi-Fi.
- * MAC blacklisting always runs; disconnect is opt-in because it interrupts
- * syslog briefly (the backlog buffer covers the gap).
+ * HIPS (active response). Keep OFF while testing connectivity / collecting
+ * a clean baseline — the current on-device tree still false-positives a lot
+ * on ambient Wi-Fi (heap-dominated model). Turn on after you retrain.
  */
-#define HIPS_ENABLE_DISCONNECT 1
-#define HIPS_DISCONNECT_COOLDOWN_MS 10000  /* min gap between quarantine actions */
+#define HIPS_ENABLE 0
+#define HIPS_ENABLE_DISCONNECT 0
+#define HIPS_DISCONNECT_COOLDOWN_MS 10000
 
 #endif /* NIDS_NET_CONFIG_H */

@@ -47,15 +47,18 @@ static uint32_t send_interval_packets = 10;
 static uint32_t consecutive_send_failures = 0;
 static uint32_t consecutive_send_successes = 0;
 static uint32_t udp_send_failure_total = 0;
+static uint32_t udp_send_success_total = 0;
+static bool syslog_first_tx_logged = false;
 static const uint32_t SEND_INTERVAL_FAST = DATASET_PROFILE ? 50 : 20;
 static const uint32_t SEND_INTERVAL_SLOW = DATASET_PROFILE ? 100 : 50;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
 static const uint32_t SEND_RECOVER_THRESHOLD = 10;
-static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 512 : 256;
+/* Keep backlog RAM ~same as before (was 512×256): fewer slots, longer lines. */
+static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 256 : 128;
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
-static const uint32_t SYSLOG_MSG_MAX = 256;
+static const uint32_t SYSLOG_MSG_MAX = 512;
 
-static char syslog_backlog[512][256];
+static char syslog_backlog[256][512];
 static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
@@ -117,6 +120,9 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "Got IP: " IPSTR ", Netmask: " IPSTR ", Gateway: " IPSTR,
                  IP2STR(&ip_info->ip), IP2STR(&ip_info->netmask), IP2STR(&ip_info->gw));
 
+        /* Lab: disable modem sleep so UDP syslog is more reliable while sniffing. */
+        esp_wifi_set_ps(WIFI_PS_NONE);
+
         wifi_connected = true;
         consecutive_send_failures = 0;
         consecutive_send_successes = 0;
@@ -138,13 +144,13 @@ static bool resolve_collector(struct sockaddr_in *dest_addr)
         dest_addr->sin_port = htons(collector_log_port);
         return true;
     }
-#if !ENABLE_AUTO_DISCOVERY || (defined(COLLECTOR_FALLBACK_IP))
-    if (sizeof(COLLECTOR_FALLBACK_IP) > 1) { // non-empty string literal
+    /* Fallback even while waiting for beacon (non-empty COLLECTOR_FALLBACK_IP). */
+    if (COLLECTOR_FALLBACK_IP[0] != '\0') {
         dest_addr->sin_addr.s_addr = inet_addr(COLLECTOR_FALLBACK_IP);
         dest_addr->sin_port = htons(SYSLOG_PORT);
-        return (dest_addr->sin_addr.s_addr != INADDR_NONE);
+        return (dest_addr->sin_addr.s_addr != INADDR_NONE &&
+                dest_addr->sin_addr.s_addr != 0);
     }
-#endif
     return false;
 }
 
@@ -167,10 +173,24 @@ static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char 
             send_interval_packets = SEND_INTERVAL_SLOW;
         }
         ESP_LOGW("UDP", "Error occurred during sending: errno %d", errno);
+        if (!syslog_first_tx_logged) {
+            syslog_first_tx_logged = true;
+            ESP_LOGW(TAG2, "First syslog UDP TX FAILED → %s:%u errno=%d",
+                     inet_ntoa(dest_addr->sin_addr),
+                     (unsigned)ntohs(dest_addr->sin_port), errno);
+        }
         return false;
     } else {
+        udp_send_success_total++;
         consecutive_send_failures = 0;
         consecutive_send_successes++;
+        if (!syslog_first_tx_logged) {
+            syslog_first_tx_logged = true;
+            ESP_LOGI(TAG2, "First syslog UDP TX OK → %s:%u (sendto accepted; Pi must listen :%u)",
+                     inet_ntoa(dest_addr->sin_addr),
+                     (unsigned)ntohs(dest_addr->sin_port),
+                     (unsigned)ntohs(dest_addr->sin_port));
+        }
         if (consecutive_send_successes >= SEND_RECOVER_THRESHOLD) {
             send_interval_packets = SEND_INTERVAL_FAST;
         }
@@ -209,7 +229,7 @@ static bool syslog_backlog_pop(char *message_out)
 
 static void flush_syslog_backlog(int sock, struct sockaddr_in *dest_addr)
 {
-    char backlog_message[256];
+    char backlog_message[512];
     uint32_t flush_budget = SYSLOG_FLUSH_BUDGET;
 
     while (wifi_connected && flush_budget > 0 && syslog_backlog_pop(backlog_message)) {
@@ -556,7 +576,7 @@ static void nids_mitigate(const nids_pkt_info_t *info)
 
 void nids_analysis_task(void* arg){
     nids_pkt_info_t info;
-    char syslog_buffer[256];
+    char syslog_buffer[512];
     uint32_t pkt_count = 0;
 
     // OLED status counters
@@ -654,7 +674,9 @@ void nids_analysis_task(void* arg){
                     ESP_LOGW(TAG2, "[INFERENCE] attack window: pkts=%lu deauth=%lu density=%.0f heap=%.0f (%lu us)",
                              (unsigned long)w_total, (unsigned long)w_deauth, f.packet_density, f.heap,
                              (unsigned long)last_inference_us);
-                    nids_mitigate(&info); // Phase 5 active-response hook (HIPS)
+#if HIPS_ENABLE
+                    nids_mitigate(&info);
+#endif
                 }
 
                 // reset accumulator for next window
@@ -698,8 +720,19 @@ void nids_analysis_task(void* arg){
 
             if (!wifi_connected && pkt_count % 500 == 0) {
                 ESP_LOGW(TAG2, "WiFi down; buffering syslog (backlog=%lu)", syslog_backlog_count);
-            } else if (SYSlOG_MODE == 1 && !collector_discovered && pkt_count % 500 == 0) {
-                ESP_LOGW(TAG2, "Waiting for collector beacon on UDP :%d (backlog=%lu)", DISCOVERY_PORT, syslog_backlog_count);
+            } else if (SYSlOG_MODE == 1 && pkt_count % 500 == 0) {
+                if (udp_ready) {
+                    ESP_LOGI(TAG2, "Syslog UDP → %s:%u (discovered=%d, backlog=%lu, ok=%lu, fail=%lu)",
+                             inet_ntoa(dest_addr.sin_addr),
+                             (unsigned)ntohs(dest_addr.sin_port),
+                             collector_discovered ? 1 : 0,
+                             (unsigned long)syslog_backlog_count,
+                             (unsigned long)udp_send_success_total,
+                             (unsigned long)udp_send_failure_total);
+                } else {
+                    ESP_LOGW(TAG2, "Waiting for collector beacon on UDP :%d (backlog=%lu)",
+                             DISCOVERY_PORT, syslog_backlog_count);
+                }
             }
 
             if(pkt_count % 100 == 0){ // print info every 100 packets
@@ -746,7 +779,9 @@ void app_main(void) {
     esp_reset_reason_t reason = esp_reset_reason();
     ESP_LOGI("HIDS", "Last Reset Reason: %d", reason);
 #if ENABLE_AUTO_DISCOVERY
-    ESP_LOGI(TAG, "Collector: auto-discovery via UDP :%d (no IP hard-coding needed)", DISCOVERY_PORT);
+    ESP_LOGI(TAG, "Collector: auto-discovery UDP :%d; fallback=%s",
+             DISCOVERY_PORT,
+             (sizeof(COLLECTOR_FALLBACK_IP) > 1) ? COLLECTOR_FALLBACK_IP : "(none)");
 #else
     ESP_LOGI(TAG, "Collector: static %s:%d", COLLECTOR_FALLBACK_IP, SYSLOG_PORT);
 #endif
