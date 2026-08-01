@@ -61,7 +61,8 @@ sudo ./host/attacks/arpspoof.sh
 git clone <your-repo-url>
 cd nids_esp32_project
 pip install -r requirements.txt
-chmod +x scripts/*.sh host/attacks/*.sh   # on Kali / Pi
+# Kali / Pi：每次新 clone（或 pull 後腳本仍不能 ./ 執行）都要：
+chmod +x host/attacks/*.sh scripts/*.sh
 ```
 
 **Network / IP（多數不用手填）：**

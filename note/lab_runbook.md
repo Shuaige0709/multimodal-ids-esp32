@@ -16,6 +16,15 @@
 
 細節表見 `note/note.md` §2.0。
 
+**Kali / Pi 第一次 `git clone` 或 `git pull` 後必做一次：**
+
+```bash
+chmod +x host/attacks/*.sh scripts/*.sh
+```
+
+否則 `sudo ./host/attacks/prepare_wifi.sh` 可能出現 `command not found`。  
+（也可用 `sudo bash host/attacks/prepare_wifi.sh monitor` 繞過。）
+
 ---
 
 ## 1. 先選今天的模式（只選一個）
@@ -102,11 +111,18 @@
 | Deauth | `prepare_wifi.sh monitor`（缺 mon 時 deauth 會自動叫） | `wlan0mon` |
 | SYN / ARP | `prepare_wifi.sh managed` + 連熱點 | `wlan0` managed |
 
-### Label
+### Label / `live_state.json`（模式 P）
 
-- 平常不必手打 `NIDS_LABEL_HOST`：collector 寫入 `data/live_state.json` 的 `label_host`。
-- Kali 要能讀到**同一份** `live_state.json`（共享資料夾／同 repo 路徑）。
-- 猜錯再覆寫：`export NIDS_LABEL_HOST=...`，或在跑 collector 的機器設 `NIDS_LABEL_ADVERTISE=...`。
+Collector 寫在 **Pi 本機**的 `data/live_state.json`（gitignore，不會跟 git pull）。  
+Kali 攻擊前同步一次即可：
+
+```bash
+scp USER@PI_HOST:~/…/data/live_state.json data/live_state.json
+export NIDS_LABEL_HOST=<Pi eth0 IP>
+```
+
+（個人一鍵腳本可放各人本機／`note/private/`，不必進 Git。）  
+沒同步就手填 `NIDS_ESP32_MAC` + `NIDS_LABEL_HOST` 也可以。
 
 ### Kali：SSH 還是視窗？
 
@@ -151,6 +167,12 @@
 
 ```bash
 cd /path/to/repo
+chmod +x host/attacks/*.sh scripts/*.sh   # clone / pull 後做一次
+
+# 攻擊前要有目標：collector 已收過 syslog（live_state 有 esp32_mac），
+# 或手動：
+#   export NIDS_ESP32_MAC=AA:BB:CC:DD:EE:FF
+#   export NIDS_LABEL_HOST=<跑 collector 那台 Kali 打得到的 IP>
 
 # --- Deauth ---
 sudo ./host/attacks/prepare_wifi.sh monitor
@@ -165,7 +187,8 @@ sudo ./host/attacks/arpspoof.sh
 
 同一時間 **只跑一支** 攻擊腳本。
 
-`prepare_wifi.sh`：開 `wlan0mon`、設 channel、把 host-only 介面設成 VMnet1 位址（預設常見 `192.168.220.50/24`；以各人 VMware 為準）。介面名不同則設 `NIDS_HOSTONLY_IFACE=...`。
+`prepare_wifi.sh`：開 `wlan0mon`、設 channel、把 host-only 設成 VMnet1 位址（預設 `192.168.124.50/24`）。  
+若你的 VMware 是別的子網（例如舊的 `.220.x`），設 `NIDS_HOSTONLY_IP=...`；介面名不同則 `NIDS_HOSTONLY_IFACE=...`。
 
 ---
 
@@ -177,7 +200,8 @@ sudo ./host/attacks/arpspoof.sh
 | NIC2 | NAT（可選） | Kali 上網 / git |
 | USB Wi-Fi | 傳給 VM | 空中攻擊 |
 
-Host-only 子網以本機 VMware 為準（可能是 `192.168.220.x` 或 `192.168.124.x`）。以 `live_state.json` 的 `label_host` 為準，不要死背文件裡的範例 IP。
+腳本預設對齊常見 VMnet1：`192.168.124.0/24`（Kali `.50`、Windows host `.1`）。  
+若 `ipconfig` 看到的是別的網段，用環境變數覆寫；模式 P 的 label 仍以 Pi IP 為準（`nids-sync` / `NIDS_LABEL_HOST`）。
 
 ---
 

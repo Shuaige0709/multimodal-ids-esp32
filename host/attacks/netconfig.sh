@@ -53,7 +53,8 @@ get_label_host() {
     echo "$h"
     return 0
   fi
-  echo "192.168.220.1"
+  # Fallback when live_state missing — match common VMnet1 host (.124). Override: NIDS_LABEL_HOST
+  echo "192.168.124.1"
 }
 
 # Back-compat name used by older snippets (resolved once at source time if file exists)

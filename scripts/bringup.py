@@ -25,7 +25,7 @@ sys.path.insert(0, ROOT)
 from host.paths import LIVE_STATE_FILE  # noqa: E402
 
 SSID = os.environ.get("NIDS_SSID", "302")
-LABEL_HOST = os.environ.get("NIDS_LABEL_HOST", "192.168.220.1")
+LABEL_HOST = os.environ.get("NIDS_LABEL_HOST", "192.168.124.1")
 LABEL_PORT = os.environ.get("NIDS_LABEL_PORT", "9999")
 
 

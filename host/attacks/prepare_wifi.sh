@@ -11,7 +11,7 @@
 #   NIDS_MON_IFACE    default wlan0mon
 #   NIDS_WIFI_CHANNEL default 11
 #   NIDS_HOSTONLY_IFACE default eth0   (VMnet1 side inside Kali)
-#   NIDS_HOSTONLY_IP    default 192.168.220.50/24
+#   NIDS_HOSTONLY_IP    default 192.168.124.50/24  (match host VMnet1; override if yours differs)
 #   NIDS_SKIP_HOSTONLY=1  skip eth0 reconfiguration
 set -euo pipefail
 
@@ -23,7 +23,7 @@ WIFI_IFACE="${NIDS_WIFI_IFACE:-wlan0}"
 MON_IFACE="${NIDS_MON_IFACE:-wlan0mon}"
 CHANNEL="${NIDS_WIFI_CHANNEL:-11}"
 HOSTONLY_IFACE="${NIDS_HOSTONLY_IFACE:-eth0}"
-HOSTONLY_CIDR="${NIDS_HOSTONLY_IP:-192.168.220.50/24}"
+HOSTONLY_CIDR="${NIDS_HOSTONLY_IP:-192.168.124.50/24}"
 MODE="${1:-status}"
 
 need_root() {

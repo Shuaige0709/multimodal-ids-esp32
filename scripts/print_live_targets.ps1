@@ -25,7 +25,7 @@ function Show-Targets {
     $labelHost = if ($env:NIDS_LABEL_HOST) { $env:NIDS_LABEL_HOST }
                  elseif ($s.label_host) { $s.label_host }
                  elseif ($s.collector_ip) { $s.collector_ip }
-                 else { "192.168.220.1" }
+                 else { "192.168.124.1" }
     $labelPort = if ($env:NIDS_LABEL_PORT) { $env:NIDS_LABEL_PORT }
                  elseif ($s.control_port) { $s.control_port }
                  else { "9999" }

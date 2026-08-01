@@ -45,7 +45,7 @@ Collector            --UDP beacon------->  ESP32                 [:5005]
 | Collector IP | 通常不用 | 留 `COLLECTOR_FALLBACK_IP ""`；靠 discovery。beacon 失敗才填**自己** collector 的 Wi‑Fi IP |
 | Label（Kali→collector） | 通常不用 | 攻擊腳本讀 `live_state.label_host`；不對再 `export NIDS_LABEL_HOST=...` |
 | VMware host-only 子網 | 各人本機 | 以 VMware 實際為準（可能是 `.220.x` 或 `.124.x`），**不要抄別人的範例 IP** |
-| Kali host-only 位址 | Kali | `prepare_wifi` 預設範例 `192.168.220.50/24`；子網不同就設 `NIDS_HOSTONLY_IP=...` |
+| Kali host-only 位址 | Kali | `prepare_wifi` 預設 `192.168.124.50/24`；子網不同就設 `NIDS_HOSTONLY_IP=...` |
 
 實驗步驟細節見 [`lab_runbook.md`](lab_runbook.md)。
 
@@ -191,9 +191,9 @@ Label：優先用 `live_state.label_host`；不對再 `export NIDS_LABEL_HOST=<�
 
 ```bash
 git pull
-chmod +x scripts/*.sh host/attacks/*.sh   # clone 後做一次即可
+chmod +x host/attacks/*.sh scripts/*.sh   # clone / pull 後做一次（否則 ./xxx.sh → command not found）
 
-# 貼上 Windows 印出的 export 後：
+# 需有 NIDS_ESP32_MAC（live_state 或手貼 print_live_targets 的 export）後：
 sudo ./host/attacks/attack_deauth.sh
 sudo ./host/attacks/syn_flood.sh
 sudo ./host/attacks/arpspoof.sh
@@ -219,7 +219,7 @@ python host/train/analyze_and_train.py
 | `NIDS_ESP32_IP` / `NIDS_ESP32_MAC` | 攻擊目標（來自 live_state 或手貼） |
 | `NIDS_BSSID` | Deauth 用 AP BSSID |
 | `NIDS_WIFI_IFACE` / `NIDS_MON_IFACE` | 預設 `wlan0` / `wlan0mon` |
-| `NIDS_LABEL_HOST` / `NIDS_LABEL_PORT` | 覆寫 label 目標；未設則讀 `live_state`（腳本後備範例常為 `192.168.220.1:9999`） |
+| `NIDS_LABEL_HOST` / `NIDS_LABEL_PORT` | 覆寫 label 目標；未設則讀 `live_state`（後備常為 `192.168.124.1:9999`） |
 | `NIDS_HOSTONLY_IP` | Kali host-only CIDR（`prepare_wifi`；子網與範例不同時必改） |
 | `NIDS_SSID` | 熱點名稱（需與 `net_config.h` 一致） |
 
