@@ -48,6 +48,9 @@ nids_windows_*.csv
 .env.*
 archive/raspberry*
 archive/**/*login*
+note/.github_token
+# Personal packing lists / home checklist — not for teammates
+note/private/
 
 # --- Archive: keep only README pointers, not old code / secrets ---
 archive/**

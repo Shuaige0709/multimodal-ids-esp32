@@ -31,9 +31,23 @@ Collector            --UDP beacon------->  ESP32                 [:5005]
 
 | 通道 | 路徑 | 說明 |
 |------|------|------|
-| Syslog | ESP32 → Host Wi-Fi → Collector `:1514` | 特徵資料；**不再寫死 IP**（auto-discovery） |
+| Syslog | ESP32 → Host Wi-Fi → Collector `:1514` | 特徵資料；**auto-discovery**（不必寫死 collector IP） |
 | Discovery | Collector 廣播 → ESP32 `:5005` | ESP32 學到 collector IP |
-| Label | Kali → `192.168.220.1:9999`（VMNet1） | 標註攻擊區間；不受熱點斷線影響 |
+| Label | Kali → 跑 collector 那台的 `:9999` | 看 `live_state.json` 的 `label_host`（常見是 Windows 的 VMnet1） |
+
+### 2.0 組員要改什麼？（IP／SSID）
+
+**多數情況不用手填 IP。** Collector 開著會廣播 beacon；ESP32 學到目的地；Kali 讀 `data/live_state.json`。
+
+| 項目 | 誰改 | 怎麼做 |
+|------|------|--------|
+| 熱點 SSID／密碼 | 每人 flash 前 | 改 `main/net_config.h` 的 `WIFI_SSID` / `WIFI_PASS`，重燒 |
+| Collector IP | 通常不用 | 留 `COLLECTOR_FALLBACK_IP ""`；靠 discovery。beacon 失敗才填**自己** collector 的 Wi‑Fi IP |
+| Label（Kali→collector） | 通常不用 | 攻擊腳本讀 `live_state.label_host`；不對再 `export NIDS_LABEL_HOST=...` |
+| VMware host-only 子網 | 各人本機 | 以 VMware 實際為準（可能是 `.220.x` 或 `.124.x`），**不要抄別人的範例 IP** |
+| Kali host-only 位址 | Kali | `prepare_wifi` 預設範例 `192.168.220.50/24`；子網不同就設 `NIDS_HOSTONLY_IP=...` |
+
+實驗步驟細節見 [`lab_runbook.md`](lab_runbook.md)。
 
 ### 2.1 Deauth 斷線 vs 當初的樹莓派 / eth0（必讀）
 
@@ -52,179 +66,27 @@ Label 走 VMNet1 只保證 **Kali→Windows 的 START/STOP** 不斷，不保證 
 
 - **Deauth / 會斷 Wi-Fi：** 優先 **Pi 有線收集**（維持舊 out-of-band）；備援是 `SYSlOG_MODE=2` USB 序列埠  
 - **SYN / ARP（關聯多半還在）：** Windows 或 Pi 跑 collector + Wi-Fi UDP + auto-discovery  
-- Label 一律：Kali → 跑 collector 那台的 host-only / 固定 IP（常見 `192.168.220.1:9999`）
+- Label 一律：Kali → `live_state.json` 的 `label_host`（Windows 模式常為 VMnet1 上的主機 IP）
 
 熱點若開 **AP isolation** 擋 client 互傳：即使沒 deauth，UDP 也可能失敗 → 查熱點設定，或改序列埠 / Pi 有線。
 
-### 2.2 回家實測依序 SOP（Pi + ESP32 + Kali）
+### 2.2 實驗日怎麼跑（指向 runbook）
 
-> 不用每天開資料夾就跑；**只有要收資料 / 攻擊時**照這份。  
-> 一次實驗建議只驗證一條線（先 syslog 通，再打攻擊）。
+**逐步指令、誰開哪支程式：** 見 [`lab_runbook.md`](lab_runbook.md)（模式 P / W / S）。
 
-#### 出發前帶什麼
+這裡只記拓撲選擇原則：
 
-| 必帶 | 可選 |
-|------|------|
-| ESP32 + USB 線 | 樹莓派 + 網線（**deauth 正式收資料強烈建議**） |
-| Windows 筆電（ESP-IDF + collector） | 手機熱點（SSID 對齊 `net_config.h`，預設 `302`） |
-| Kali VM（VMware）+ **USB Wi-Fi** passthrough | — |
+| 模式 | Collector | 適合 |
+|------|-----------|------|
+| **P** | 樹莓派（Wi‑Fi UDP；deauth 時靠 backlog／或有線 OOB） | 正式收一場：NORMAL + 多種攻擊 |
+| **W** | Windows `session_windows.ps1` | 快速聯調、沒帶 Pi |
+| **S** | Windows USB serial（`SYSlOG_MODE=2`） | 沒 Pi 又要穩收 deauth |
 
-#### Kali：SSH 還是直接開？
+一次實驗建議只驗證一條線（先 syslog 通，再打攻擊）。
 
-| 方式 | 何時用 |
-|------|--------|
-| **VMware 視窗直接開終端** | 第一次接網卡、開 monitor、debug 介面名稱（`wlan0`/`wlan0mon`） |
-| **Windows → SSH 進 Kali** | 網卡已 OK、之後只跑攻擊指令（較省事） |
+Kali：第一次接 USB 網卡／開 monitor 建議 VMware 視窗直接操作；介面穩定後可用 SSH。
 
-兩者都可以；**第一次回家建議先直接開**，確認 `iwconfig` / monitor 正常後，之後再用 SSH。
-
----
-
-#### 開機順序（照做）
-
-```
-① 熱點 / AP 開好（SSID=302 或與韌體一致）
-② 樹莓派開機 + 接 eth0（若今天要做 deauth / 要 OOB 收集）
-③ Windows：開 VMware → Kali（USB Wi-Fi 勾給 VM）
-④ Windows：ESP32 USB 接上 → 燒錄 / monitor
-⑤ 跑 collector（在「負責收 syslog」的那台：Pi 或 Windows）
-⑥ Kali：git pull → 設目標 → 攻擊
-```
-
----
-
-#### Step 0 — 網路角色先想清楚（今天用哪種）
-
-**模式 D（Deauth / 正式 OOB，推）**
-
-```
-ESP32 --(有線或你們既有的 Pi 路徑)--> Pi 跑 nids_collector.py
-Kali  --VMNet1 label--> Pi 或 Windows（看 label 聽在哪）
-Kali  --USB Wi-Fi 空中--> ESP32（deauth）
-```
-
-**模式 W（SYN/ARP 或快速聯調）**
-
-```
-ESP32 --Wi-Fi UDP--> Windows 跑 nids_collector.py（auto-discovery）
-Kali  --VMNet1 label--> Windows 192.168.220.1:9999
-Kali  --USB Wi-Fi--> ESP32
-```
-
-**模式 S（沒帶 Pi 又要測 deauth）**
-
-```
-ESP32 --USB serial--> Windows serial_collector.py（SYSlOG_MODE=2）
-Kali  --label--> Windows
-```
-
----
-
-#### Step 1 — 樹莓派（模式 D 才需要）
-
-1. 開機，確認 eth0 / 與 Windows 或 ESP32 的連線方式與以前相同  
-2. `git pull` 專案（或同步你們慣用的目錄）  
-3. 啟動 collector：
-   ```bash
-   cd /path/to/nids_esp32_project
-   python3 host/collector/nids_collector.py
-   # 或舊習慣的埠；需能收 syslog + :9999 label
-   ```
-4. 記下 Pi 的 IP；若 label 打到 Pi，Kali 要：
-   ```bash
-   export NIDS_LABEL_HOST=<Pi的IP或Windows轉發目標>
-   ```
-5. （可選）Windows 若當中繼：`python scripts/udp_relay.py ...` 轉到 Pi  
-
-驗收：Pi 終端開始出現 syslog 或至少 beacon 有在跑。
-
----
-
-#### Step 2 — Windows + ESP32
-
-1. 開 **ESP-IDF** PowerShell：
-   ```powershell
-   cd ...\nids_esp32_project
-   idf.py build flash monitor
-   ```
-2. 確認 `main/net_config.h` 的 SSID/密碼 = 熱點  
-3. Monitor 上看：連上 Wi-Fi、（UDP 模式）有 `Discovered collector` 或 backlog 在降  
-4. **今天模式：**
-   - **D（Pi）：** 韌體 syslog 指到能到 Pi 的路徑（discovery 學到 Pi，或你們既有靜態/有線設定）  
-   - **W：** Windows：`.\scripts\session_windows.ps1`  
-   - **P：** Pi：`./scripts/bringup.sh`  
-   - **S：** `SYSlOG_MODE=2` 重燒後：`python scripts\serial_collector.py --port COMx`
-
-驗收：collector（Pi 或 Windows）有持續進資料 / CSV 在長。
-
----
-
-#### Step 3 — Kali（直接開或 SSH）
-
-**A. 直接開（建議第一次）**
-
-1. VMware 視窗進 Kali  
-2. USB Wi-Fi 已 passthrough；確認介面：
-   ```bash
-   ip link
-   # managed: wlan0；deauth 前開 monitor → wlan0mon
-   ```
-3. `cd` 到專案，`git pull`，`chmod +x scripts/*.sh host/attacks/*.sh`（首次）
-
-**B. SSH（之後常用）**
-
-1. Windows：`ssh kali@<Kali的VMNet1 IP>`  
-2. 同上 `cd` + `git pull`  
-3. 注意：sudo 攻擊、monitor 模式在 SSH 下通常仍可用（網卡已在 VM 內）
-
-**取得攻擊目標（二選一）**
-
-```bash
-# 在 Windows/Pi 跑 print_live_targets，把 export 貼進 Kali：
-export NIDS_ESP32_IP=...
-export NIDS_ESP32_MAC=...
-export NIDS_LABEL_HOST=192.168.220.1   # 或改成 Pi IP
-export NIDS_MON_IFACE=wlan0mon
-export NIDS_WIFI_IFACE=wlan0
-```
-
-（若 `data/live_state.json` 有掛到 Kali，也可：`./scripts/print_live_targets.sh`）
-
----
-
-#### Step 4 — 依攻擊類型開打（先 START 環境再攻擊）
-
-| 攻擊 | Kali | Collector 建議 | 攻擊前確認 |
-|------|------|----------------|------------|
-| **Deauth** | `sudo ./host/attacks/attack_deauth.sh` | **Pi 或 serial** | monitor 起來；label host 正確 |
-| **SYN** | `sudo ./host/attacks/syn_flood.sh` | Windows/Pi UDP 皆可 | ESP32 與 Kali 同熱點；HTTP :80 |
-| **ARP** | `sudo ./host/attacks/arpspoof.sh` | 同上 | managed 介面在熱點上 |
-
-驗收：
-
-- Collector 出現 `ATTACK START/STOP`  
-- CSV 裡對應區間 `label=1`  
-- Deauth 時：Pi/serial **仍持續有列**（若只有 Wi-Fi UDP 且螢幕停住 → 符合預期，換模式 D/S）
-
----
-
-#### Step 5 — 收工
-
-1. Kali：停攻擊、可關 monitor  
-2. Collector：Ctrl+C，確認 `data/raw/nids_dataset_*.csv`（或 Pi 上同等路徑）已存  
-3. 大檔 → Google Drive；小改 code → `git commit`（**不要 commit CSV**）  
-4. ESP32 斷電 / 拔線；Pi 關機  
-
----
-
-#### 15 分鐘最小驗收（第一次回家）
-
-1. ESP32 flash + 連熱點 OK  
-2. Collector 有資料進來（先别管攻擊）  
-3. Kali `ping` 得到 label 主機（`192.168.220.1` 或 Pi）  
-4. 跑一次短 deauth **或** 一次短 SYN，看得到 START/STOP  
-
-全過再談平衡資料集與重訓 `model.h`。
+個人出發清單、本機 IP／SSH 備忘 → 放 `note/private/`（已 gitignore，不上 Git）。
 
 ---
 
@@ -304,7 +166,7 @@ note/                      note.md + lab_runbook.md
 2. VMware 共用資料夾掛 `data/`
 3. 手動 scp（較煩）
 
-Label 固定打 Windows 的 VMNet1：`NIDS_LABEL_HOST=192.168.220.1`。
+Label：優先用 `live_state.label_host`；不對再 `export NIDS_LABEL_HOST=<跑 collector 那台 Kali 打得到的 IP>`（Windows 模式常見為 VMnet1 主機位址）。
 
 ---
 
@@ -357,8 +219,9 @@ python host/train/analyze_and_train.py
 | `NIDS_ESP32_IP` / `NIDS_ESP32_MAC` | 攻擊目標（來自 live_state 或手貼） |
 | `NIDS_BSSID` | Deauth 用 AP BSSID |
 | `NIDS_WIFI_IFACE` / `NIDS_MON_IFACE` | 預設 `wlan0` / `wlan0mon` |
-| `NIDS_LABEL_HOST` / `NIDS_LABEL_PORT` | 預設 `192.168.220.1` / `9999` |
-| `NIDS_SSID` | 預設 `302`（需與 `net_config.h` 一致） |
+| `NIDS_LABEL_HOST` / `NIDS_LABEL_PORT` | 覆寫 label 目標；未設則讀 `live_state`（腳本後備範例常為 `192.168.220.1:9999`） |
+| `NIDS_HOSTONLY_IP` | Kali host-only CIDR（`prepare_wifi`；子網與範例不同時必改） |
+| `NIDS_SSID` | 熱點名稱（需與 `net_config.h` 一致） |
 
 ---
 
@@ -403,7 +266,8 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 
 | 檔案 | 內容 |
 |------|------|
-| `note/lab_runbook.md` | **實測當天：誰開什麼、Pi/Windows 流程** |
+| `note/lab_runbook.md` | **實驗日：誰開什麼、Pi/Windows/Kali 流程** |
 | `README.md` | 快速上手 |
-| `data/README.md` | Drive 分享約定 |
+| `data/README.md` | 大檔分享約定（如 Drive） |
 | `docs/` | 計畫書 PDF、架構圖、figures |
+| `note/private/` | **個人備忘（gitignore，勿 push）** |

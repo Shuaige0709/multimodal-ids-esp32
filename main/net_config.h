@@ -30,8 +30,8 @@
  * last resort if no beacon has been heard yet AND this string is non-empty.
  * Leave as "" to rely purely on auto-discovery.
  */
-/* Pi wlan0 on hotspot "302" (see hostname -I). Change if Pi gets a new DHCP lease. */
-#define COLLECTOR_FALLBACK_IP "10.168.114.181"
+/* Leave "" for auto-discovery. Set only if beacon fails (your collector Wi-Fi IP). */
+#define COLLECTOR_FALLBACK_IP ""
 
 /*
  * HIPS (active response). Keep OFF while testing connectivity / collecting

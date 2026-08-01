@@ -64,11 +64,13 @@ pip install -r requirements.txt
 chmod +x scripts/*.sh host/attacks/*.sh   # on Kali / Pi
 ```
 
-- Datasets are **not** in Git → see `data/README.md` (Google Drive)
-- Team notes: `note/lab_runbook.md` (how to run a lab), `note/note.md` (design)
-- Do not commit `sdkconfig`, `build/`, CSV, or anything under `archive/` except the README stubs
+**Network / IP（多數不用手填）：**
 
-```bash
-pip install -r requirements.txt          # already noted above
-chmod +x scripts/*.sh host/attacks/*.sh  # Kali / Pi
-```
+1. 改 `main/net_config.h` 的 `WIFI_SSID` / `WIFI_PASS` 成你們的熱點 → `idf.py flash`
+2. 開 collector → ESP32 靠 discovery 找 IP（`COLLECTOR_FALLBACK_IP` 保持 `""`）
+3. Kali 攻擊腳本讀 `data/live_state.json`；不通再用 `print_live_targets` 貼 `export`
+4. VMware host-only 子網以**各人電腦**為準，見 `note/note.md` §2.0
+
+- Datasets are **not** in Git → see `data/README.md`
+- Team notes: `note/lab_runbook.md`, `note/note.md`
+- Do not commit `sdkconfig`, `build/`, CSV, or secrets under `archive/` / `note/private/`
