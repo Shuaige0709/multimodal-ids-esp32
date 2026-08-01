@@ -451,15 +451,22 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
 
     // 2. package the log message in RFC 5424 format
     // format: <PRI>1 TIMESTAMP HOSTNAME APPNAME PROCID MSGID MSG
-    snprintf(buf, size, 
+    int n = snprintf(buf, size,
         "<%d>1 %s.%03ldZ %s %s - - "
-        "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\"] "
-        "Deauth_Detection_Heartbeat\n",
+        "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" "
+        "heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" "
+        "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
-        PEN, info->subtype, info->rssi, info->snr, info->ipat, info->seq_ctrl, heap,
-        esp_get_minimum_free_heap_size(), uptime_ms, wifi_reconnect_count, queue_peak_depth,
-        udp_send_failure_total, syslog_backlog_count, syslog_backlog_dropped,
+        PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
+        (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
+        (long long)uptime_ms, (unsigned long)wifi_reconnect_count,
+        (unsigned long)queue_peak_depth, (unsigned long)udp_send_failure_total,
+        (unsigned long)syslog_backlog_count, (unsigned long)syslog_backlog_dropped,
         sta_mac_str, attack_detected ? 1 : 0);
+    if (n < 0 || (size_t)n >= size) {
+        ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=512",
+                 n, (unsigned)size);
+    }
 }
 
 // --- Simple HTTP server for testing SYN flood impact ---

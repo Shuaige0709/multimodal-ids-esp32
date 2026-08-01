@@ -55,6 +55,31 @@ regex = re.compile(
     r'\]'
 )
 
+_META_KEYS = (
+    "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
+    "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
+    "host_mac", "attack",
+)
+_KV_RE = re.compile(r'([a-z_]+)="([^"]*)"')
+_PEN_RE = re.compile(r'\[meta@(\S+)')
+
+
+def parse_syslog_meta(log_line):
+    """Full RFC5424 meta match, or best-effort KV parse for truncated (old 256B) firmware."""
+    match = regex.search(log_line)
+    if match:
+        return match.groupdict(), False
+
+    pairs = dict(_KV_RE.findall(log_line))
+    if "rssi" not in pairs or "heap" not in pairs:
+        return None, False
+    pen_m = _PEN_RE.search(log_line)
+    if pen_m:
+        pairs["pen"] = pen_m.group(1)
+    for key in _META_KEYS:
+        pairs.setdefault(key, "0" if key not in ("subtype", "host_mac", "attack") else "")
+    return pairs, True
+
 
 def color_text(text, color):
     return f"{color}{text}{RESET}"
@@ -329,17 +354,18 @@ def start_receiver():
                     log_line = data.decode(errors="ignore").strip()
                     log_time = datetime.now()
 
-                    match = regex.search(log_line)
-                    if not match:
-                        # Truncated / old-format lines used to be dropped silently —
-                        # that looked like "collector idle" even when tcpdump saw UDP.
+                    d, truncated = parse_syslog_meta(log_line)
+                    if not d:
                         print(color_text(
                             f"   ⚠️  syslog parse miss from {addr[0]} "
                             f"({len(data)}B): {log_line[:160]}",
                             YELLOW))
                         continue
-
-                    d = match.groupdict()
+                    if truncated and total_count < 3:
+                        print(color_text(
+                            f"   ⚠️  truncated syslog ({len(data)}B) from {addr[0]} — "
+                            f"flash firmware with 512B buffer for full fields",
+                            YELLOW))
 
                     # Record the ESP32's live IP (packet source) + MAC (from syslog) for
                     # the attack scripts. Written only when it changes.
