@@ -82,6 +82,10 @@ cmd_monitor() {
   echo " Label path   : ${HOSTONLY_IFACE} ${HOSTONLY_CIDR} -> $(get_label_host):${LABEL_PORT}"
   echo " Next         : sudo ./host/attacks/attack_deauth.sh"
   echo " After deauth : sudo ./host/attacks/prepare_wifi.sh managed"
+  echo "=== TO RECOVER internet (airmon kills NM) ==="
+  echo " sudo airmon-ng stop ${MON_IFACE}"
+  echo " sudo systemctl restart NetworkManager"
+  echo " (or: sudo ./host/attacks/prepare_wifi.sh managed)"
   echo "==========================================="
 }
 

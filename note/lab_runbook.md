@@ -87,16 +87,16 @@ chmod +x host/attacks/*.sh scripts/*.sh
 ```text
 ⑤ 先收 2–5 分鐘 NORMAL
 ⑥ Deauth：
-     sudo ./host/attacks/prepare_wifi.sh monitor
-     sudo ./host/attacks/attack_deauth.sh
+     sudo -E ./host/attacks/prepare_wifi.sh monitor
+     sudo -E ./host/attacks/attack_deauth.sh
      → 等 ESP32 重連、collector 又穩定
 ⑦ 再收 1–2 分鐘 NORMAL
 ⑧ SYN：
-     sudo ./host/attacks/prepare_wifi.sh managed
+     sudo -E ./host/attacks/prepare_wifi.sh managed
      # 連回熱點後：
-     sudo ./host/attacks/syn_flood.sh
+     sudo -E ./host/attacks/syn_flood.sh
 ⑨ 再收 1–2 分鐘 NORMAL
-⑩ ARP：sudo ./host/attacks/arpspoof.sh
+⑩ ARP：sudo -E ./host/attacks/arpspoof.sh
 ⑪ 最後再收一段 NORMAL
 ⑫ Collector Ctrl+C → 保存 CSV（大檔用約定管道分享，勿 commit）
 ⑬ （可改天）aggregate_windows → analyze_and_train → flash
@@ -123,6 +123,13 @@ export NIDS_LABEL_HOST=<Pi eth0 IP>
 
 （個人一鍵腳本可放各人本機／`note/private/`，不必進 Git。）  
 沒同步就手填 `NIDS_ESP32_MAC` + `NIDS_LABEL_HOST` 也可以。
+
+**`sudo` 會清掉環境變數**：若剛 `export` 過，攻擊／prepare 請用 `sudo -E`，否則只靠 `live_state.json` 裡的欄位（且 host-only 走腳本預設）。
+
+```bash
+sudo -E ./host/attacks/prepare_wifi.sh monitor
+sudo -E ./host/attacks/attack_deauth.sh
+```
 
 ### Kali：SSH 還是視窗？
 
@@ -170,19 +177,17 @@ cd /path/to/repo
 chmod +x host/attacks/*.sh scripts/*.sh   # clone / pull 後做一次
 
 # 攻擊前要有目標：collector 已收過 syslog（live_state 有 esp32_mac），
-# 或手動：
-#   export NIDS_ESP32_MAC=AA:BB:CC:DD:EE:FF
-#   export NIDS_LABEL_HOST=<跑 collector 那台 Kali 打得到的 IP>
+# 或手動 export；有 export 時下面一律 sudo -E
 
 # --- Deauth ---
-sudo ./host/attacks/prepare_wifi.sh monitor
-sudo ./host/attacks/attack_deauth.sh
+sudo -E ./host/attacks/prepare_wifi.sh monitor
+sudo -E ./host/attacks/attack_deauth.sh
 
 # --- SYN / ARP ---
-sudo ./host/attacks/prepare_wifi.sh managed
+sudo -E ./host/attacks/prepare_wifi.sh managed
 # 連上 SSID 後：
-sudo ./host/attacks/syn_flood.sh
-sudo ./host/attacks/arpspoof.sh
+sudo -E ./host/attacks/syn_flood.sh
+sudo -E ./host/attacks/arpspoof.sh
 ```
 
 同一時間 **只跑一支** 攻擊腳本。

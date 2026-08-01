@@ -46,13 +46,13 @@ python3 host/collector/nids_collector.py
 
 （`./scripts/bringup.sh` 只是可選包裝，多印幾行 checklist，不是必跑。）
 
-**Kali attacks (one at a time):**
+**Kali attacks (one at a time; use `sudo -E` if you exported NIDS_* vars):**
 ```bash
-sudo ./host/attacks/prepare_wifi.sh monitor
-sudo ./host/attacks/attack_deauth.sh
-sudo ./host/attacks/prepare_wifi.sh managed   # then join hotspot
-sudo ./host/attacks/syn_flood.sh
-sudo ./host/attacks/arpspoof.sh
+sudo -E ./host/attacks/prepare_wifi.sh monitor
+sudo -E ./host/attacks/attack_deauth.sh
+sudo -E ./host/attacks/prepare_wifi.sh managed   # then join hotspot
+sudo -E ./host/attacks/syn_flood.sh
+sudo -E ./host/attacks/arpspoof.sh
 ```
 
 ## First clone (teammates)
