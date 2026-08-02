@@ -11,11 +11,12 @@ Edge multimodal NIDS on ESP32 (100 ms windows + on-device tree).
 | 開 collector（Pi） | `python3 host/collector/nids_collector.py` | Pi |
 | 印給 Kali 的 export | `.\scripts\print_live_targets.ps1` | Windows（Pi 上可 `print_live_targets.sh`） |
 | 網卡 monitor/managed | `sudo ./host/attacks/prepare_wifi.sh monitor\|managed` | Kali |
-| Deauth / SYN / ARP | `sudo ./host/attacks/attack_deauth.sh` 等 | Kali |
-| 聚合 + 訓練 | `python host/train/aggregate_windows.py` → `analyze_and_train.py` | Windows |
+| Deauth / SYN / ARP / Auth flood | `sudo ./host/attacks/attack_*.sh` | Kali |
+| 聚合 + 平衡檢查 + 訓練 | `aggregate_windows.py` → `check_dataset_balance.py` → `analyze_and_train.py` | Windows |
+| Mode S（deauth 穩收） | `SYSlOG_MODE 2` + `serial_collector.py --standby` | Windows |
 | 燒錄 | `idf.py build flash monitor` | Windows |
 
-詳細步驟見 `note/lab_runbook.md`。
+詳細步驟見 `note/lab_runbook.md`；收完用 `python host/train/check_dataset_balance.py --strict` 驗收。
 
 ## Layout
 
@@ -53,6 +54,14 @@ sudo -E ./host/attacks/attack_deauth.sh
 sudo -E ./host/attacks/prepare_wifi.sh managed   # then join hotspot
 sudo -E ./host/attacks/syn_flood.sh
 sudo -E ./host/attacks/arpspoof.sh
+# Phase C (after balanced baseline): sudo -E ./host/attacks/attack_auth_flood.sh
+```
+
+**Train / accept (after a balanced capture):**
+```powershell
+python host/train/aggregate_windows.py
+python host/train/check_dataset_balance.py --strict
+python host/train/analyze_and_train.py --strict-export
 ```
 
 ## First clone (teammates)

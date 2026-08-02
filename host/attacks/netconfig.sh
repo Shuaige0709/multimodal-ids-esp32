@@ -93,6 +93,13 @@ resolve_bssid() {
     echo "$NIDS_BSSID"
     return 0
   fi
+  # Prefer AP BSSID learned by ESP32 firmware (written into live_state.json)
+  local from_live
+  from_live="$(_json_field ap_bssid)"
+  if [[ -n "$from_live" && "$from_live" != "null" && "$from_live" != "00:00:00:00:00:00" ]]; then
+    echo "$from_live"
+    return 0
+  fi
   local scan bssid
   if command -v iw >/dev/null 2>&1; then
     scan="$(iw dev "$WIFI_IFACE" scan 2>/dev/null || true)"
@@ -112,7 +119,7 @@ resolve_bssid() {
     }
   ')"
   if [[ -z "$bssid" ]]; then
-    echo "[netconfig] could not resolve BSSID for SSID '$SSID'. Export NIDS_BSSID." >&2
+    echo "[netconfig] could not resolve BSSID for SSID '$SSID'. Export NIDS_BSSID or wait for live_state.ap_bssid." >&2
     return 1
   fi
   echo "$bssid"

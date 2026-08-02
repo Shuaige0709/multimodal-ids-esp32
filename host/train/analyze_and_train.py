@@ -52,7 +52,10 @@ from host.train.nids_features import (  # noqa: E402
     ATTACK_TYPE_COL,
     HIDS_FEATURES,
     LABEL_COL,
+    MAX_HEAP_IMPORTANCE,
+    NIDS_BASELINE_FEATURES,
     NIDS_ONLY_FEATURES,
+    WIDS_P0_FEATURES,
     WINDOW_FEATURES,
 )
 
@@ -102,9 +105,12 @@ def load_windows(path):
     import pandas as pd
 
     df = pd.read_csv(path)
-    missing = [c for c in WINDOW_FEATURES + [LABEL_COL] if c not in df.columns]
-    if missing:
-        raise SystemExit(f"Dataset missing columns: {missing}")
+    # Older window CSVs may lack P0 WIDS columns — fill with 0 for forward compat.
+    for c in WINDOW_FEATURES:
+        if c not in df.columns:
+            df[c] = 0.0
+    if LABEL_COL not in df.columns:
+        raise SystemExit(f"Dataset missing label column: {LABEL_COL}")
     if ATTACK_TYPE_COL not in df.columns:
         df[ATTACK_TYPE_COL] = "NONE"
     df[LABEL_COL] = (df[LABEL_COL].astype(float) > 0).astype(int)
@@ -132,8 +138,10 @@ def evaluate(name, model, X_test, y_test, attack_types_test=None):
     except ValueError:
         roc = float("nan")
 
-    cm = confusion_matrix(y_test, y_pred)
+    cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
     report = classification_report(y_test, y_pred, digits=4, zero_division=0)
+    tn, fp, fn, tp = cm.ravel()
+    fpr = float(fp / (fp + tn)) if (fp + tn) else 0.0
 
     per_attack = {}
     if attack_types_test is not None:
@@ -153,6 +161,7 @@ def evaluate(name, model, X_test, y_test, attack_types_test=None):
         "f1": float(f1),
         "auc": float(roc) if roc == roc else None,
         "accuracy": float((y_pred == y_test).mean()),
+        "fpr": fpr,
         "cm": cm.tolist(),
         "report": report,
         "per_attack_recall": per_attack,
@@ -164,11 +173,21 @@ def evaluate(name, model, X_test, y_test, attack_types_test=None):
 def print_result(r):
     print(f"\n=== {r['name']} ===")
     print(f"  Precision={r['precision']:.4f}  Recall={r['recall']:.4f}  "
-          f"F1={r['f1']:.4f}  AUC={r['auc']}  Acc={r['accuracy']:.4f}")
+          f"F1={r['f1']:.4f}  FPR={r['fpr']:.4f}  AUC={r['auc']}  Acc={r['accuracy']:.4f}")
     print(f"  Confusion matrix: {r['cm']}")
     if r["per_attack_recall"]:
         print(f"  Per-attack recall: {r['per_attack_recall']}")
     print(r["report"])
+
+
+def _fit_eval_subset(name, feature_names, df, y):
+    X = df[feature_names].to_numpy(dtype=float)
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y
+    )
+    clf = DecisionTreeClassifier(max_depth=4, class_weight="balanced", random_state=42)
+    clf.fit(X_tr, y_tr)
+    return evaluate(name, clf, X_te, y_te)
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +437,8 @@ def main():
     ap.add_argument("--export-model", default="DecisionTree",
                     help="Which model to export to model.h (must be a tree)")
     ap.add_argument("--no-plots", action="store_true")
+    ap.add_argument("--strict-export", action="store_true",
+                    help="Refuse to write model.h if heap dominates feature importance")
     args = ap.parse_args()
 
     dataset = args.dataset or find_default_dataset()
@@ -456,21 +477,25 @@ def main():
     best = max(results, key=lambda r: r["f1"])
     print(f"\nBest by F1: {best['name']} (F1={best['f1']:.4f})")
 
-    # --- Fusion ablation ---
-    print("\n--- Fusion ablation (HIDS contribution) ---")
-    X_nids = df[NIDS_ONLY_FEATURES].to_numpy(dtype=float)
-    Xn_tr, Xn_te, yn_tr, yn_te = train_test_split(
-        X_nids, y, test_size=0.3, random_state=42, stratify=y
-    )
-    abl = DecisionTreeClassifier(max_depth=4, class_weight="balanced", random_state=42)
-    abl.fit(Xn_tr, yn_tr)
-    abl_r = evaluate("DecisionTree NIDS-only", abl, Xn_te, yn_te)
-    print_result(abl_r)
-
+    # --- Ablations: ±HIDS, ±P0 WIDS ---
+    print("\n--- Ablation (HIDS + P0 WIDS) ---")
     dt_full = next(r for r in results if r["name"] == "DecisionTree")
-    delta = dt_full["f1"] - abl_r["f1"]
-    print(f"\nFusion lift (F1 full - F1 NIDS-only) = {delta:+.4f}")
-    print(f"  HIDS features used: {HIDS_FEATURES}")
+    abl_nids = _fit_eval_subset("DT NIDS-only (no HIDS)", NIDS_ONLY_FEATURES, df, y)
+    print_result(abl_nids)
+    # Baseline wireless (no P0 WIDS) + HIDS
+    baseline_feats = NIDS_BASELINE_FEATURES + HIDS_FEATURES
+    abl_no_wids = _fit_eval_subset("DT baseline (no P0 WIDS)", baseline_feats, df, y)
+    print_result(abl_no_wids)
+    # Wireless baseline only (no HIDS, no P0)
+    abl_base_only = _fit_eval_subset("DT wireless-baseline only", NIDS_BASELINE_FEATURES, df, y)
+    print_result(abl_base_only)
+
+    delta_hids = dt_full["f1"] - abl_nids["f1"]
+    delta_wids = dt_full["f1"] - abl_no_wids["f1"]
+    print(f"\nFusion lift (full - NIDS-only) F1 = {delta_hids:+.4f}  HIDS={HIDS_FEATURES}")
+    print(f"WIDS P0 lift (full - no P0) F1 = {delta_wids:+.4f}  P0={WIDS_P0_FEATURES}")
+    print("  Note: P0 lift stays ~0 until you re-collect with firmware that emits "
+          "deauth_tgt/seq_jump.")
 
     # --- Export deployable DecisionTree via m2cgen ---
     export_name = args.export_model
@@ -491,18 +516,26 @@ def main():
     print("\n--- Exported Decision Tree rules ---")
     print(export_text(export_clf, feature_names=WINDOW_FEATURES))
 
-    model_h = MODEL_H
-    export_model_h(export_clf, WINDOW_FEATURES, model_h)
-
-    # Feature importances for the exported tree
+    heap_imp = 0.0
     if hasattr(export_clf, "feature_importances_"):
         print("\nFeature importances (export tree):")
         for fname, imp in sorted(
             zip(WINDOW_FEATURES, export_clf.feature_importances_),
             key=lambda x: -x[1],
         ):
+            if fname == "heap":
+                heap_imp = float(imp)
             if imp > 0:
                 print(f"  {fname:>16}: {imp:.4f}")
+
+    if args.strict_export and heap_imp > MAX_HEAP_IMPORTANCE:
+        raise SystemExit(
+            f"--strict-export: heap importance {heap_imp:.3f} > {MAX_HEAP_IMPORTANCE}. "
+            "Re-collect a balanced dataset (see note/lab_runbook.md) before flashing."
+        )
+
+    model_h = MODEL_H
+    export_model_h(export_clf, WINDOW_FEATURES, model_h)
 
     # --- Plots + metrics JSON ---
     if not args.no_plots:
@@ -520,9 +553,24 @@ def main():
             os.path.join(OUTPUT_DIR, "roc_curve.png"),
         )
         plot_ablation(
-            dt_full["f1"], abl_r["f1"],
+            dt_full["f1"], abl_nids["f1"],
             os.path.join(OUTPUT_DIR, "fusion_ablation.png"),
         )
+        # Extended ablation bars
+        fig, ax = plt.subplots(figsize=(7, 4), dpi=150)
+        names = ["Full", "No HIDS", "No P0 WIDS", "Baseline RF"]
+        vals = [dt_full["f1"], abl_nids["f1"], abl_no_wids["f1"], abl_base_only["f1"]]
+        ax.bar(names, vals, color=["#1f77b4", "#ff7f0e", "#2ca02c", "#7f7f7f"])
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel("F1")
+        ax.set_title("Ablation: full vs -HIDS vs -P0 WIDS vs baseline")
+        for i, v in enumerate(vals):
+            ax.text(i, v + 0.02, f"{v:.3f}", ha="center", fontsize=9)
+        fig.tight_layout()
+        p = os.path.join(OUTPUT_DIR, "ablation_wids_hids.png")
+        fig.savefig(p)
+        plt.close(fig)
+        print(f"Saved {p}")
         plot_telemetry(df, os.path.join(OUTPUT_DIR, "telemetry_window"))
 
         fig, ax = plt.subplots(figsize=(10, 5), dpi=200)
@@ -553,10 +601,19 @@ def main():
         ],
         "ablation": {
             "full_f1": dt_full["f1"],
-            "nids_only_f1": abl_r["f1"],
-            "fusion_lift_f1": delta,
+            "nids_only_f1": abl_nids["f1"],
+            "no_p0_wids_f1": abl_no_wids["f1"],
+            "baseline_rf_only_f1": abl_base_only["f1"],
+            "fusion_lift_f1": delta_hids,
+            "wids_p0_lift_f1": delta_wids,
             "hids_features": HIDS_FEATURES,
             "nids_features": NIDS_ONLY_FEATURES,
+            "wids_p0_features": WIDS_P0_FEATURES,
+        },
+        "decision_tree": {
+            "fpr": dt_full["fpr"],
+            "per_attack_recall": dt_full["per_attack_recall"],
+            "heap_importance": heap_imp,
         },
         "exported_model": export_name,
         "feature_order": WINDOW_FEATURES,

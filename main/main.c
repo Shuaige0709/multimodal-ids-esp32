@@ -70,8 +70,18 @@ static volatile bool collector_discovered = false;
 static volatile uint32_t collector_ip_be = 0;                 // collector IP in network byte order
 static volatile uint16_t collector_log_port = SYSLOG_PORT;    // collector syslog port (learned or default)
 
-// Own STA MAC as a printable string (filled once Wi-Fi has started), used in syslog + discovery
+// Own STA MAC (filled once Wi-Fi has started), used in syslog + deauth_targeted
 static char sta_mac_str[18] = "00:00:00:00:00:00";
+static uint8_t sta_mac_bytes[6] = {0};
+
+// Associated AP identity for live_state.json (filled on GOT_IP)
+static char ap_bssid_str[18] = "00:00:00:00:00:00";
+static uint8_t ap_channel = 0;
+
+// Sequence-jump detector state (P0 WIDS)
+#define SEQ_JUMP_THRESH 64
+static uint16_t last_seq_seen = 0;
+static bool last_seq_valid = false;
 
 // --- On-device 100 ms window aggregation + inference state ---
 static volatile bool attack_detected = false;                 // latest inference result (drives OLED / mitigation)
@@ -91,7 +101,10 @@ typedef struct{
     uint16_t seq_ctrl; // sequence control field from 802.11 header
     uint8_t mcs; // modulation coding scheme for HT/VHT packets
     uint32_t len; // packet length
-    uint8_t src_mac[6]; // source MAC address
+    uint8_t src_mac[6]; // source MAC address (addr2)
+    uint8_t dst_mac[6]; // destination MAC address (addr1)
+    uint8_t deauth_targeted; // 1 if DEAUTH/DISASSOC to us or broadcast
+    uint8_t seq_jump; // 1 if sequence number jumped vs previous frame
     char type_str[8]; // packet type (MGMT, CTRL, DATA, MISC) 
     char subtype[16]; // detailed subtype (e.g., BEACON, PROBE_REQ)
 } nids_pkt_info_t;
@@ -119,6 +132,18 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "WiFi connected; resuming UDP sends");
         ESP_LOGI(TAG, "Got IP: " IPSTR ", Netmask: " IPSTR ", Gateway: " IPSTR,
                  IP2STR(&ip_info->ip), IP2STR(&ip_info->netmask), IP2STR(&ip_info->gw));
+
+        /* Cache AP BSSID + channel for live_state / deauth scripts. */
+        {
+            wifi_ap_record_t ap;
+            if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+                snprintf(ap_bssid_str, sizeof(ap_bssid_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                         ap.bssid[0], ap.bssid[1], ap.bssid[2],
+                         ap.bssid[3], ap.bssid[4], ap.bssid[5]);
+                ap_channel = ap.primary;
+                ESP_LOGI(TAG, "AP BSSID: %s ch=%u", ap_bssid_str, ap_channel);
+            }
+        }
 
         /* Lab: disable modem sleep so UDP syslog is more reliable while sniffing. */
         esp_wifi_set_ps(WIFI_PS_NONE);
@@ -384,10 +409,33 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
             break;
     }
 
-    memcpy(info.src_mac, pkt->payload + 10, 6); // source MAC address is located at offset 10 in the 802.11 header for both management and data frames
+    // 802.11 addrs: addr1=dst @4, addr2=src @10 (mgmt/data)
+    if (info.len >= 16) {
+        memcpy(info.dst_mac, pkt->payload + 4, 6);
+        memcpy(info.src_mac, pkt->payload + 10, 6);
+    } else {
+        memset(info.dst_mac, 0, 6);
+        memset(info.src_mac, 0, 6);
+    }
 
     // 802.11 header
     info.seq_ctrl = (info.len >= 24) ? (((pkt->payload[23] << 8) | pkt->payload[22]) >> 4) : 0; // sequence control field is located at offset 22-23 in the 802.11 header for both management and data frames
+
+    // P0: sequence jump vs previous frame (wrap-aware, 12-bit seq)
+    info.seq_jump = 0;
+    if (info.len >= 24) {
+        uint16_t seq = info.seq_ctrl & 0x0FFF;
+        if (last_seq_valid) {
+            uint16_t d = (uint16_t)((seq - last_seq_seen) & 0x0FFF);
+            if (d > SEQ_JUMP_THRESH && d < (4096 - SEQ_JUMP_THRESH)) {
+                info.seq_jump = 1;
+            }
+        }
+        last_seq_seen = seq;
+        last_seq_valid = true;
+    }
+
+    info.deauth_targeted = 0;
 
     // Parse 802.11 Frame Control to extract subtype when possible
     if (info.len >= 1) {
@@ -417,6 +465,14 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
                 default:
                     strcpy(info.subtype, "MGMT_OTHER");
                     break;
+            }
+            // P0: deauth/disassoc aimed at this STA or broadcast (ignore side-channel noise)
+            if (fc_subtype == 10 || fc_subtype == 12) {
+                static const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+                if (memcmp(info.dst_mac, bcast, 6) == 0 ||
+                    memcmp(info.dst_mac, sta_mac_bytes, 6) == 0) {
+                    info.deauth_targeted = 1;
+                }
             }
         } else {
             info.subtype[0] = '\0';
@@ -455,14 +511,17 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         "<%d>1 %s.%03ldZ %s %s - - "
         "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" "
         "heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" "
-        "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\"]",
+        "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\" "
+        "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
         (long long)uptime_ms, (unsigned long)wifi_reconnect_count,
         (unsigned long)queue_peak_depth, (unsigned long)udp_send_failure_total,
         (unsigned long)syslog_backlog_count, (unsigned long)syslog_backlog_dropped,
-        sta_mac_str, attack_detected ? 1 : 0);
+        sta_mac_str, attack_detected ? 1 : 0,
+        (unsigned)info->deauth_targeted, (unsigned)info->seq_jump,
+        ap_bssid_str, (unsigned)ap_channel);
     if (n < 0 || (size_t)n >= size) {
         ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=512",
                  n, (unsigned)size);
@@ -597,6 +656,7 @@ void nids_analysis_task(void* arg){
     const int64_t WINDOW_US = 100000; // 100 ms sliding epoch (matches the dataset methodology)
     int64_t window_start_us = esp_timer_get_time();
     uint32_t w_total = 0, w_beacon = 0, w_deauth = 0, w_probe = 0, w_auth = 0;
+    uint32_t w_deauth_tgt = 0, w_seq_jump = 0;
     int32_t w_rssi_sum = 0, w_snr_sum = 0;
     int64_t w_rssi_sq_sum = 0;
     uint32_t w_rssi_cnt = 0;
@@ -642,6 +702,8 @@ void nids_analysis_task(void* arg){
             else if (strcmp(info.subtype, "DISASSOC") == 0)   w_deauth++;
             else if (strncmp(info.subtype, "PROBE", 5) == 0)  w_probe++;
             else if (strcmp(info.subtype, "AUTH") == 0)       w_auth++;
+            if (info.deauth_targeted) w_deauth_tgt++;
+            if (info.seq_jump)        w_seq_jump++;
 
             int64_t win_now_us = esp_timer_get_time();
             if ((win_now_us - window_start_us) >= WINDOW_US) {
@@ -660,8 +722,10 @@ void nids_analysis_task(void* arg){
                 f.packet_density = (double)w_total / dt;
                 f.beacon_packets = (double)w_beacon;
                 f.deauth_packets = (double)w_deauth;
+                f.deauth_targeted = (double)w_deauth_tgt;
                 f.probe_packets  = (double)w_probe;
                 f.auth_packets   = (double)w_auth;
+                f.seq_jump       = (double)w_seq_jump;
                 f.rssi_mean      = rssi_mean;
                 f.rssi_var       = rssi_var;
                 f.snr_mean       = w_rssi_cnt ? (double)w_snr_sum / w_rssi_cnt : 0.0;
@@ -678,8 +742,10 @@ void nids_analysis_task(void* arg){
                 attack_detected = (pred != 0);
 
                 if (attack_detected) {
-                    ESP_LOGW(TAG2, "[INFERENCE] attack window: pkts=%lu deauth=%lu density=%.0f heap=%.0f (%lu us)",
-                             (unsigned long)w_total, (unsigned long)w_deauth, f.packet_density, f.heap,
+                    ESP_LOGW(TAG2, "[INFERENCE] attack window: pkts=%lu deauth=%lu tgt=%lu jump=%lu density=%.0f heap=%.0f (%lu us)",
+                             (unsigned long)w_total, (unsigned long)w_deauth,
+                             (unsigned long)w_deauth_tgt, (unsigned long)w_seq_jump,
+                             f.packet_density, f.heap,
                              (unsigned long)last_inference_us);
 #if HIPS_ENABLE
                     nids_mitigate(&info);
@@ -689,6 +755,7 @@ void nids_analysis_task(void* arg){
                 // reset accumulator for next window
                 window_start_us = win_now_us;
                 w_total = w_beacon = w_deauth = w_probe = w_auth = 0;
+                w_deauth_tgt = w_seq_jump = 0;
                 w_rssi_sum = w_snr_sum = 0; w_rssi_sq_sum = 0; w_rssi_cnt = 0;
             }
             
@@ -852,11 +919,11 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    // Cache our own STA MAC as a string; embedded in syslog so the collector can
-    // record this node's live IP+MAC into live_state.json for the attack scripts.
+    // Cache our own STA MAC; used for deauth_targeted + live_state.json.
     {
         uint8_t mac[6] = {0};
         if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+            memcpy(sta_mac_bytes, mac, 6);
             snprintf(sta_mac_str, sizeof(sta_mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
                      mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
             ESP_LOGI(TAG, "STA MAC: %s", sta_mac_str);

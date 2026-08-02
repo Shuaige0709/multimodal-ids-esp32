@@ -16,8 +16,10 @@ WINDOW_FEATURES = [
     "packet_density",   # total_packets / window_seconds (lambda)
     "beacon_packets",   # 802.11 beacon count
     "deauth_packets",   # deauth + disassoc count
+    "deauth_targeted",  # P0 WIDS: deauth/disassoc aimed at us or broadcast
     "probe_packets",    # probe req/resp count
     "auth_packets",     # auth frames (EAP / auth proxy)
+    "seq_jump",         # P0 WIDS: sequence-number jumps in the window
     "rssi_mean",        # mean RSSI over the window
     "rssi_var",         # population variance of RSSI
     "snr_mean",         # mean SNR over the window
@@ -29,13 +31,23 @@ WINDOW_FEATURES = [
     "backlog",          # HIDS: syslog backlog depth
 ]
 
-# Network-only subset (no host/HIDS state) - used for the fusion ablation study
-# that quantifies how much the host-side (HIDS) features contribute.
+# Wireless / RF-side features (no host state).
 NIDS_ONLY_FEATURES = [
+    "total_packets", "packet_density",
+    "beacon_packets", "deauth_packets", "deauth_targeted",
+    "probe_packets", "auth_packets", "seq_jump",
+    "rssi_mean", "rssi_var", "snr_mean",
+]
+
+# Baseline wireless features before P0 WIDS additions (for ±WIDS ablation).
+NIDS_BASELINE_FEATURES = [
     "total_packets", "packet_density",
     "beacon_packets", "deauth_packets", "probe_packets", "auth_packets",
     "rssi_mean", "rssi_var", "snr_mean",
 ]
+
+# P0 WIDS-only delta (must match teammate confluence plan).
+WIDS_P0_FEATURES = ["deauth_targeted", "seq_jump"]
 
 # Host-only (HIDS) features.
 HIDS_FEATURES = ["heap", "minheap", "reconn", "qpeak", "udpfail", "backlog"]
@@ -43,3 +55,9 @@ HIDS_FEATURES = ["heap", "minheap", "reconn", "qpeak", "udpfail", "backlog"]
 LABEL_COL = "label"
 ATTACK_TYPE_COL = "attack_type"
 WINDOW_START_COL = "window_start"
+
+# Phase A acceptance defaults (override via check_dataset_balance.py CLI).
+REQUIRED_ATTACK_TYPES = ("DEAUTH", "SYN_FLOOD", "ARP_SPOOF")
+MIN_NORMAL_WINDOWS = 200
+MIN_WINDOWS_PER_ATTACK = 150
+MAX_HEAP_IMPORTANCE = 0.70  # export tree: heap must not dominate after rebalance

@@ -267,6 +267,8 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 | 檔案 | 內容 |
 |------|------|
 | `note/lab_runbook.md` | **實驗日：誰開什麼、Pi/Windows/Kali 流程** |
+| `note/improvement_directions.md` | **可改進方向**（特徵合流、資料、攻擊覆蓋、與組員對齊） |
+| `note/compare_wids_vs_nids.md` | WIDS 定義、與 `esp32_packet_monitor` 對照 |
 | `README.md` | 快速上手 |
 | `data/README.md` | 大檔分享約定（如 Drive） |
 | `docs/` | 計畫書 PDF、架構圖、figures |

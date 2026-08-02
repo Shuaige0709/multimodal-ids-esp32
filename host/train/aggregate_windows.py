@@ -79,6 +79,9 @@ def aggregate_rows(rows, window_sec):
         deauth = sum(1 for s in subs if s in ("DEAUTH", "DISASSOC"))
         probe = sum(1 for s in subs if s.startswith("PROBE"))
         auth = sum(1 for s in subs if s == "AUTH")
+        # P0 WIDS: prefer firmware-emitted flags; fall back to 0 on old CSVs
+        deauth_tgt = sum(1 for r in group if int(_to_float(r.get("deauth_tgt"))) > 0)
+        seq_jump = sum(1 for r in group if int(_to_float(r.get("seq_jump"))) > 0)
 
         last = group[-1]
         label = 1 if any(int(_to_float(r.get(LABEL_COL))) > 0 for r in group) else 0
@@ -90,8 +93,10 @@ def aggregate_rows(rows, window_sec):
             "packet_density": total / window_sec,
             "beacon_packets": beacon,
             "deauth_packets": deauth,
+            "deauth_targeted": deauth_tgt,
             "probe_packets": probe,
             "auth_packets": auth,
+            "seq_jump": seq_jump,
             "rssi_mean": float(rssi.mean()) if total else 0.0,
             "rssi_var": float(rssi.var()) if total > 1 else 0.0,  # population variance (matches firmware)
             "snr_mean": float(snr.mean()) if total else 0.0,

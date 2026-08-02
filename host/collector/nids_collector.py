@@ -50,15 +50,19 @@ regex = re.compile(
     r'udpfail="(?P<udpfail>[^"]+)" '
     r'backlog="(?P<backlog>[^"]+)" '
     r'dropped="(?P<dropped>[^"]+)"'
-    r'(?: host_mac="(?P<host_mac>[^"]+)")?'   # optional (newer firmware)
-    r'(?: attack="(?P<attack>[^"]+)")?'       # optional on-device inference result
+    r'(?: host_mac="(?P<host_mac>[^"]+)")?'
+    r'(?: attack="(?P<attack>[^"]+)")?'
+    r'(?: deauth_tgt="(?P<deauth_tgt>[^"]+)")?'
+    r'(?: seq_jump="(?P<seq_jump>[^"]+)")?'
+    r'(?: ap_bssid="(?P<ap_bssid>[^"]+)")?'
+    r'(?: channel="(?P<channel>[^"]+)")?'
     r'\]'
 )
 
 _META_KEYS = (
     "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
-    "host_mac", "attack",
+    "host_mac", "attack", "deauth_tgt", "seq_jump", "ap_bssid", "channel",
 )
 _KV_RE = re.compile(r'([a-z_]+)="([^"]*)"')
 _PEN_RE = re.compile(r'\[meta@(\S+)')
@@ -76,8 +80,9 @@ def parse_syslog_meta(log_line):
     pen_m = _PEN_RE.search(log_line)
     if pen_m:
         pairs["pen"] = pen_m.group(1)
+    str_keys = ("subtype", "host_mac", "attack", "ap_bssid", "channel")
     for key in _META_KEYS:
-        pairs.setdefault(key, "0" if key not in ("subtype", "host_mac", "attack") else "")
+        pairs.setdefault(key, "" if key in str_keys else "0")
     return pairs, True
 
 
@@ -158,10 +163,18 @@ def guess_label_host(esp32_ip=None):
     return None
 
 
-def write_live_state(esp32_ip=None, esp32_mac=None):
+def write_live_state(esp32_ip=None, esp32_mac=None, ap_bssid=None, channel=None):
     """Persist ESP32 + collector endpoints so attack scripts need no hard-coded IPs."""
     syslog_ip = get_local_ip_towards(esp32_ip) if esp32_ip else None
     label_host = guess_label_host(esp32_ip)
+    # Preserve previously known AP fields if this call omits them
+    prev = {}
+    try:
+        if os.path.isfile(LIVE_STATE_FILE):
+            with open(LIVE_STATE_FILE, encoding="utf-8") as fh:
+                prev = json.load(fh)
+    except (OSError, ValueError):
+        prev = {}
     state = {
         "esp32_ip": esp32_ip,
         "esp32_mac": esp32_mac,
@@ -169,6 +182,8 @@ def write_live_state(esp32_ip=None, esp32_mac=None):
         "collector_ip": syslog_ip or label_host,
         # IP Kali should use for START/STOP (often VMnet1 host-only on Windows)
         "label_host": label_host,
+        "ap_bssid": ap_bssid or prev.get("ap_bssid"),
+        "channel": channel if channel is not None else prev.get("channel"),
         "log_port": LOG_PORT,
         "control_port": CONTROL_PORT,
         "updated": datetime.now().isoformat(),
@@ -241,7 +256,7 @@ def start_receiver():
     last_uptime_sec = 0.0
 
     # Live ESP32 identity tracking (for auto-discovery / live_state.json)
-    last_live_esp32 = (None, None)  # (ip, mac)
+    last_live_esp32 = (None, None, None, None)  # (ip, mac, ap_bssid, channel)
 
     # Start the discovery beacon so the ESP32 can find us with no hard-coded IP
     stop_event = threading.Event()
@@ -278,7 +293,8 @@ def start_receiver():
         writer.writerow([
             "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
             "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
-            "host_mac", "pred_attack", "label", "attack_type", "timestamp"
+            "host_mac", "pred_attack", "deauth_tgt", "seq_jump",
+            "ap_bssid", "channel", "label", "attack_type", "timestamp"
         ])
 
         while True:
@@ -367,15 +383,18 @@ def start_receiver():
                             f"flash firmware with 512B buffer for full fields",
                             YELLOW))
 
-                    # Record the ESP32's live IP (packet source) + MAC (from syslog) for
-                    # the attack scripts. Written only when it changes.
+                    # Record the ESP32's live IP/MAC/AP for attack scripts.
                     esp32_ip = addr[0]
                     esp32_mac = d.get("host_mac")
-                    if (esp32_ip, esp32_mac) != last_live_esp32:
-                        state = write_live_state(esp32_ip, esp32_mac)
-                        last_live_esp32 = (esp32_ip, esp32_mac)
+                    ap_bssid = d.get("ap_bssid") or None
+                    channel = d.get("channel") or None
+                    live_key = (esp32_ip, esp32_mac, ap_bssid, channel)
+                    if live_key != last_live_esp32:
+                        state = write_live_state(esp32_ip, esp32_mac, ap_bssid, channel)
+                        last_live_esp32 = live_key
                         print(color_text(
                             f"   🛰️  ESP32 live at {esp32_ip} (mac={esp32_mac}); "
+                            f"AP={state.get('ap_bssid')} ch={state.get('channel')}; "
                             f"label_host={state.get('label_host')}; "
                             f"wrote {os.path.basename(LIVE_STATE_FILE)}",
                             CYAN))
@@ -418,6 +437,8 @@ def start_receiver():
                         d["seq"], d["heap"], d["minheap"], d["uptime"],
                         d["reconn"], d["qpeak"], d["udpfail"], d["backlog"],
                         d["dropped"], d.get("host_mac", ""), d.get("attack", ""),
+                        d.get("deauth_tgt", "0"), d.get("seq_jump", "0"),
+                        d.get("ap_bssid", ""), d.get("channel", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
                     f.flush()
