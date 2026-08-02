@@ -1,0 +1,119 @@
+{
+  "dataset": "nids_windows_20260802_234245_fixed.csv",
+  "n_windows": 4815,
+  "n_normal": 3005,
+  "n_attack": 1810,
+  "class_balance_note": "Metrics use class_weight=balanced; prefer F1/Recall/AUC over accuracy when classes are imbalanced. Re-collect more NORMAL windows for paper.",
+  "models": [
+    {
+      "name": "DecisionTree",
+      "precision": 0.7947598253275109,
+      "recall": 0.6703499079189686,
+      "f1": 0.7272727272727273,
+      "auc": 0.8666805502811432,
+      "accuracy": 0.8110726643598616,
+      "fpr": 0.10421286031042129,
+      "cm": [
+        [
+          808,
+          94
+        ],
+        [
+          179,
+          364
+        ]
+      ],
+      "per_attack_recall": {
+        "ARP_SPOOF": 0.272108843537415,
+        "DEAUTH": 0.7112068965517241,
+        "SYN_FLOOD": 0.9695121951219512
+      }
+    },
+    {
+      "name": "RandomForest",
+      "precision": 0.8190255220417634,
+      "recall": 0.6500920810313076,
+      "f1": 0.7248459958932238,
+      "auc": 0.8744788540301275,
+      "accuracy": 0.8145328719723184,
+      "fpr": 0.08647450110864745,
+      "cm": [
+        [
+          824,
+          78
+        ],
+        [
+          190,
+          353
+        ]
+      ],
+      "per_attack_recall": {
+        "ARP_SPOOF": 0.17687074829931973,
+        "DEAUTH": 0.728448275862069,
+        "SYN_FLOOD": 0.9634146341463414
+      }
+    }
+  ],
+  "ablation": {
+    "full_f1": 0.7272727272727273,
+    "nids_only_f1": 0.4470588235294118,
+    "no_p0_wids_f1": 0.7272727272727273,
+    "baseline_rf_only_f1": 0.4490861618798956,
+    "fusion_lift_f1": 0.2802139037433155,
+    "wids_p0_lift_f1": 0.0,
+    "hids_features": [
+      "heap",
+      "minheap",
+      "reconn",
+      "qpeak",
+      "udpfail",
+      "backlog"
+    ],
+    "nids_features": [
+      "total_packets",
+      "packet_density",
+      "beacon_packets",
+      "deauth_packets",
+      "deauth_targeted",
+      "probe_packets",
+      "auth_packets",
+      "seq_jump",
+      "rssi_mean",
+      "rssi_var",
+      "snr_mean"
+    ],
+    "wids_p0_features": [
+      "deauth_targeted",
+      "seq_jump"
+    ]
+  },
+  "decision_tree": {
+    "fpr": 0.10421286031042129,
+    "per_attack_recall": {
+      "ARP_SPOOF": 0.272108843537415,
+      "DEAUTH": 0.7112068965517241,
+      "SYN_FLOOD": 0.9695121951219512
+    },
+    "heap_importance": 0.893780471796483
+  },
+  "exported_model": "DecisionTree",
+  "feature_order": [
+    "total_packets",
+    "packet_density",
+    "beacon_packets",
+    "deauth_packets",
+    "deauth_targeted",
+    "probe_packets",
+    "auth_packets",
+    "seq_jump",
+    "rssi_mean",
+    "rssi_var",
+    "snr_mean",
+    "heap",
+    "minheap",
+    "reconn",
+    "qpeak",
+    "udpfail",
+    "backlog"
+  ]
+}

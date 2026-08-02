@@ -127,17 +127,32 @@ resolve_bssid() {
 
 send_label() {
   # send_label START|STOP [attack_type]
+  # UDP is lossy over VMnet1; send a few times so collector is less likely to miss STOP.
   local status="$1"
   local attack_type="${2:-NONE}"
-  local ts msg host
+  local ts msg host i
   host="$(get_label_host)"
   ts="$(date +%s)"
   msg=$(printf '{"status":"%s","attack_type":"%s","timestamp":%s}' "$status" "$attack_type" "$ts")
-  echo "[netconfig] label ${status} -> ${host}:${LABEL_PORT}"
-  if command -v nc >/dev/null 2>&1; then
-    printf '%s' "$msg" | nc -u -w1 "$host" "$LABEL_PORT" || true
-  else
-    printf '%s' "$msg" >"/dev/udp/${host}/${LABEL_PORT}" || true
+  echo "[netconfig] label ${status} (${attack_type}) -> ${host}:${LABEL_PORT}"
+  if [[ -z "$host" ]]; then
+    echo "[netconfig] ERROR: empty label host — export NIDS_LABEL_HOST=10.0.0.2 (Pi) or sync live_state" >&2
+    return 1
+  fi
+  for i in 1 2 3; do
+    if command -v nc >/dev/null 2>&1; then
+      # -u UDP; -w1 timeout; some nc need -q0 / -N to exit after send
+      printf '%s' "$msg" | nc -u -w1 -q0 "$host" "$LABEL_PORT" 2>/dev/null \
+        || printf '%s' "$msg" | nc -u -w1 "$host" "$LABEL_PORT" 2>/dev/null \
+        || true
+    else
+      printf '%s' "$msg" >"/dev/udp/${host}/${LABEL_PORT}" 2>/dev/null || true
+    fi
+    sleep 0.15
+  done
+  # Reachability hint (does not prove UDP arrived, but catches wrong iface / dead Pi)
+  if ! ping -c 1 -W 1 "$host" >/dev/null 2>&1; then
+    echo "[netconfig] WARN: cannot ping ${host} — label likely dropped. Check eth0 host-only + NIDS_LABEL_HOST." >&2
   fi
 }
 

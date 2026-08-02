@@ -5,7 +5,7 @@
  * Feature order MUST match nids_features.WINDOW_FEATURES / firmware fill order.
  * DO NOT edit by hand — regenerate with: python analyze_and_train.py
  *
- * Generated: 2026-08-02T20:42:25
+ * Generated: 2026-08-03T00:28:32
  */
 #ifndef NIDS_MODEL_H
 #define NIDS_MODEL_H
@@ -61,35 +61,59 @@ static inline int nids_predict(const nids_window_features_t *f)
     /* --- m2cgen-generated tree --- */
 
     double var0[2];
-    if (input[11] <= 74306.0) {
-        if (input[8] <= -81.5) {
-            memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
-        } else {
-            memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
-        }
-    } else {
-        if (input[12] <= 47588.0) {
-            if (input[11] <= 74734.0) {
-                if (input[11] <= 74694.0) {
-                    memcpy(var0, (double[]){0.9790629128976522, 0.020937087102347797}, 2 * sizeof(double));
+    if (input[11] <= 69810.0) {
+        if (input[11] <= 65802.0) {
+            if (input[11] <= 65796.0) {
+                if (input[11] <= 65746.0) {
+                    memcpy(var0, (double[]){0.1150012377258849, 0.884998762274115}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.8180613822035769, 0.18193861779642304}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.5132226144320352, 0.4867773855679648}, 2 * sizeof(double));
                 }
             } else {
-                if (input[8] <= -65.5) {
-                    memcpy(var0, (double[]){0.9658269545228333, 0.03417304547716666}, 2 * sizeof(double));
+                memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+            }
+        } else {
+            if (input[11] <= 69688.0) {
+                if (input[12] <= 44540.0) {
+                    memcpy(var0, (double[]){0.11622772492019666, 0.8837722750798034}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.9890885207000296, 0.010911479299970342}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.013032783828855952, 0.986967216171144}, 2 * sizeof(double));
+                }
+            } else {
+                if (input[14] <= 95.0) {
+                    memcpy(var0, (double[]){0.13090195268106206, 0.8690980473189379}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){0.9353142013472363, 0.06468579865276367}, 2 * sizeof(double));
+                }
+            }
+        }
+    } else {
+        if (input[11] <= 69872.0) {
+            if (input[3] <= 0.5) {
+                if (input[10] <= -0.5) {
+                    memcpy(var0, (double[]){0.4356398279144267, 0.5643601720855733}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){0.6055892563044362, 0.3944107436955637}, 2 * sizeof(double));
+                }
+            } else {
+                if (input[8] <= -86.5) {
+                    memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){0.011453314410204017, 0.988546685589796}, 2 * sizeof(double));
                 }
             }
         } else {
-            if (input[12] <= 60886.0) {
-                memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
-            } else {
-                if (input[1] <= 35.0) {
-                    memcpy(var0, (double[]){0.9618023363619507, 0.03819766363804933}, 2 * sizeof(double));
+            if (input[9] <= 4.25) {
+                if (input[8] <= -86.5) {
+                    memcpy(var0, (double[]){0.8872984211587605, 0.1127015788412395}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.7872749342504539, 0.2127250657495461}, 2 * sizeof(double));
+                }
+            } else {
+                if (input[11] <= 69894.0) {
+                    memcpy(var0, (double[]){0.7067354622786223, 0.2932645377213778}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){0.09124954987396472, 0.9087504501260354}, 2 * sizeof(double));
                 }
             }
         }

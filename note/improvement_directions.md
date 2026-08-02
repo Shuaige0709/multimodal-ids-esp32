@@ -118,24 +118,29 @@
 
 ### 短期（效果／可信度）
 
-- [x] 平衡重收工具／checklist：`note/private/phase_a_collection.md` + `host/train/check_dataset_balance.py`（**實測重收仍待實驗日**）
+- [x] 平衡重收工具／checklist：`note/private/phase_a_collection.md` + `host/train/check_dataset_balance.py`
+- [x] **Phase A 實測重收（2026-08-02）**：平衡 PASS；DT F1≈0.73／FPR≈0.10；HIDS ablation F1 **+0.28**
+- [x] SYN STOP 遺失後處理：`host/train/fix_syn_label_gap.py`（報告需披露校正）
 - [x] Deauth 用 Serial standby：`scripts/serial_collector.py --standby`
-- [x] 重訓閘門：`analyze_and_train.py --strict-export`（heap importance）
+- [x] 重訓閘門：`analyze_and_train.py --strict-export`（heap importance；本場 heap≈0.89 → 未 strict 上板）
+- [ ] **下一場**：flash 含 P0 韌體後短收，確認 CSV `deauth_tgt`／`seq_jump` 非全 0
+- [ ] **下一場**：補 ARP／DEAUTH／可靠 SYN STOP；重跑 balance + train + ±WIDS 消融
 - [ ] 與組員對齊評估協定後再比數字
 
 ### 中期（WIDS 補強）
 
 - [x] 實作 P0：`deauth_targeted`、`seq_jump`（韌體 + `WINDOW_FEATURES` + 聚合 + collector）
 - [ ] P1：unique_bssid 窗、EAPOL；更新特徵契約
-- [x] 消融：±P0 WIDS、±HIDS（`ablation_wids_hids.png`）
+- [x] 消融管線：±P0 WIDS、±HIDS（本場 P0 lift≈0，待新資料）
 - [x] Collector：Serial standby
 
 ### 較長期（可選）
 
 - [x] 第四攻擊腳本：`host/attacks/attack_auth_flood.sh`（label `AUTH_FLOOD`；收資料待 Phase C 實驗日）
-- [x] `live_state` 帶 `ap_bssid`／`channel`（韌體 syslog → collector）
+- [x] `live_state` 帶 `ap_bssid`／`channel`（韌體 syslog → collector；`prepare_wifi.sh` 優先讀 channel）
 - [ ] 韌體模組化
 - [ ] 100 ms vs 250 ms 消融（同一特徵集）
+- [ ] HIPS：等 FPR 明顯低於 ~10% 再考慮開啟
 
 ---
 
@@ -157,3 +162,15 @@
 | `note/note.md` | 架構、discovery、已知資料問題 |
 | `README.md` | 快速上手 |
 | 組員 `esp32_packet_monitor/` | sniffer／metrics／collect_dataset 參考實作 |
+
+---
+
+## 9. 下一實驗日待辦（寫給明天的自己）
+
+1. **驗證 P0 欄位有進 CSV**（短 deauth 即可）。
+2. **補一場短收**：多 NORMAL + ARP／DEAUTH；SYN 必須看到 STOP ACK。
+3. 跑 `check_dataset_balance.py` → `analyze_and_train.py --plot [--strict-export]`。
+4. 報告沿用 08-02 平衡場數字（披露 SYN 校正）；勿報舊灌水指標。
+5. AUTH_FLOOD／HIPS 先擱置。
+
+詳細節奏與 Mode P/S 指令見個人筆記 `note/private/phase_a_collection.md`、`note/private/phase_a_eval_20260802.md`（gitignore）。

@@ -21,7 +21,15 @@ source "${DIR}/netconfig.sh"
 
 WIFI_IFACE="${NIDS_WIFI_IFACE:-wlan0}"
 MON_IFACE="${NIDS_MON_IFACE:-wlan0mon}"
-CHANNEL="${NIDS_WIFI_CHANNEL:-11}"
+# Channel: explicit env > live_state.json (ESP32-reported) > default 11
+_LIVE_CH="$(_json_field channel 2>/dev/null || true)"
+if [[ -n "${NIDS_WIFI_CHANNEL:-}" ]]; then
+  CHANNEL="$NIDS_WIFI_CHANNEL"
+elif [[ -n "${_LIVE_CH}" && "${_LIVE_CH}" != "null" && "${_LIVE_CH}" != "0" ]]; then
+  CHANNEL="${_LIVE_CH}"
+else
+  CHANNEL="11"
+fi
 HOSTONLY_IFACE="${NIDS_HOSTONLY_IFACE:-eth0}"
 HOSTONLY_CIDR="${NIDS_HOSTONLY_IP:-192.168.124.50/24}"
 MODE="${1:-status}"
