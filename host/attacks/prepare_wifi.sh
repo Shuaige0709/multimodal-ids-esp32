@@ -110,17 +110,48 @@ cmd_managed() {
   if iface_exists "$MON_IFACE"; then
     airmon-ng stop "$MON_IFACE" || true
   fi
-  # Revive NetworkManager so wlan can join the hotspot again
+  # airmon-ng check kill left NM dead — bring it back and unblock wifi
+  rfkill unblock wifi 2>/dev/null || true
   if command -v systemctl >/dev/null 2>&1; then
+    systemctl start NetworkManager 2>/dev/null || true
     systemctl restart NetworkManager 2>/dev/null || true
   fi
+  # Give NM a moment; ensure station iface exists and is up
+  sleep 2
+  if iface_exists "$WIFI_IFACE"; then
+    ip link set "$WIFI_IFACE" up 2>/dev/null || true
+  else
+    echo "[prepare_wifi] WARN: ${WIFI_IFACE} missing — plug USB Wi-Fi / connect in VMware"
+  fi
+
   setup_hostonly
+
+  # Best-effort reconnect to lab hotspot (needs NM + password already saved, or wifi.powersave)
+  if command -v nmcli >/dev/null 2>&1 && iface_exists "$WIFI_IFACE"; then
+    echo "[prepare_wifi] trying nmcli connect '${SSID}' on ${WIFI_IFACE} ..."
+    nmcli device set "$WIFI_IFACE" managed yes 2>/dev/null || true
+    nmcli radio wifi on 2>/dev/null || true
+    if nmcli -t -f NAME connection show | grep -qx "$SSID"; then
+      nmcli connection up "$SSID" ifname "$WIFI_IFACE" 2>/dev/null \
+        || nmcli device wifi connect "$SSID" ifname "$WIFI_IFACE" 2>/dev/null \
+        || echo "[prepare_wifi] WARN: auto-connect failed — run nmcli manually (see below)"
+    else
+      nmcli device wifi connect "$SSID" ifname "$WIFI_IFACE" 2>/dev/null \
+        || echo "[prepare_wifi] WARN: no saved connection for '${SSID}' — connect manually"
+    fi
+    sleep 1
+    nmcli -t -f DEVICE,STATE,CONNECTION device status 2>/dev/null | head -n 10 || true
+  fi
+
   echo "==========================================="
-  echo " Managed iface : ${WIFI_IFACE} (join SSID '${SSID}' before SYN/ARP)"
+  echo " Managed iface : ${WIFI_IFACE} (SSID '${SSID}')"
   echo " Label path    : ${HOSTONLY_IFACE} -> $(get_label_host):${LABEL_PORT}"
-  echo " Next          : nmcli dev wifi connect '${SSID}' ..."
-  echo "                 sudo ./host/attacks/syn_flood.sh"
-  echo "                 sudo ./host/attacks/arpspoof.sh"
+  echo " If hotspot not up yet:"
+  echo "   nmcli device wifi rescan"
+  echo "   nmcli device wifi connect '${SSID}' ifname ${WIFI_IFACE}"
+  echo " If ping Pi fails:"
+  echo "   sudo ip route replace 10.0.0.0/24 via ${NIDS_WIN_GATEWAY:-192.168.124.1} dev ${HOSTONLY_IFACE}"
+  echo " Next: sudo -E ./host/attacks/syn_flood.sh"
   echo "==========================================="
 }
 
