@@ -58,6 +58,13 @@ setup_hostonly() {
   ip addr flush dev "$HOSTONLY_IFACE" 2>/dev/null || true
   ip addr add "$HOSTONLY_CIDR" dev "$HOSTONLY_IFACE"
   ip link set "$HOSTONLY_IFACE" up
+  # Mode P: Pi eth0 is 10.0.0.2 behind Windows; flush drops this route every time.
+  _win_gw="${NIDS_WIN_GATEWAY:-192.168.124.1}"
+  if [[ "${HOSTONLY_CIDR}" == 192.168.124.* ]]; then
+    ip route replace 10.0.0.0/24 via "${_win_gw}" dev "$HOSTONLY_IFACE" 2>/dev/null \
+      && echo "[prepare_wifi] route 10.0.0.0/24 via ${_win_gw}" \
+      || true
+  fi
   echo "[prepare_wifi] label target should be reachable (often $(get_label_host))"
   ping -c 1 -W 1 "$(get_label_host)" >/dev/null 2>&1 \
     && echo "[prepare_wifi] ping $(get_label_host) OK" \

