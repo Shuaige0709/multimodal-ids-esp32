@@ -50,9 +50,10 @@ python3 host/collector/nids_collector.py
 **Kali attacks (one at a time; use `sudo -E` if you exported NIDS_* vars):**
 ```bash
 sudo -E ./host/attacks/prepare_wifi.sh monitor
+# Deauth on phone hotspot: airodump BSSID+channel, then export NIDS_BSSID / NIDS_WIFI_CHANNEL
 sudo -E ./host/attacks/attack_deauth.sh
-sudo -E ./host/attacks/prepare_wifi.sh managed   # then join hotspot
-sudo -E ./host/attacks/syn_flood.sh
+sudo -E ./host/attacks/prepare_wifi.sh managed   # restarts NM; join hotspot if needed
+sudo -E ./host/attacks/syn_flood.sh              # confirm collector shows ATTACK STOP
 sudo -E ./host/attacks/arpspoof.sh
 # Phase C (after balanced baseline): sudo -E ./host/attacks/attack_auth_flood.sh
 ```

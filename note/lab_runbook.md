@@ -88,21 +88,25 @@ chmod +x host/attacks/*.sh scripts/*.sh
 ⑤ 先收 2–5 分鐘 NORMAL
 ⑥ Deauth：
      sudo -E ./host/attacks/prepare_wifi.sh monitor
+     # 手機熱點：先 airodump 對 BSSID + CH，再 export
+     #   sudo airodump-ng wlan0mon --essid <SSID>
+     #   export NIDS_BSSID=… NIDS_WIFI_CHANNEL=…
      sudo -E ./host/attacks/attack_deauth.sh
      → 等 ESP32 重連、collector 又穩定
 ⑦ 再收 1–2 分鐘 NORMAL
 ⑧ SYN：
      sudo -E ./host/attacks/prepare_wifi.sh managed
-     # 連回熱點後：
+     # 確認已連回熱點（nmcli）；必要時手動 nmcli device wifi connect …
      sudo -E ./host/attacks/syn_flood.sh
-⑨ 再收 1–2 分鐘 NORMAL
+     → collector 必須出現 ✋ ATTACK STOP（不只 Kali 印 FINISHED）
+⑨ 再收 1–2 分鐘 NORMAL（順便確認還在熱點上）
 ⑩ ARP：sudo -E ./host/attacks/arpspoof.sh
 ⑪ 最後再收一段 NORMAL
 ⑫ Collector Ctrl+C → 保存 CSV（大檔用約定管道分享，勿 commit）
 ⑬ （可改天）aggregate_windows → analyze_and_train → flash
 ```
 
-每打完一種，collector 應出現對應 `ATTACK START/STOP`。
+每打完一種，collector 應出現對應 `ATTACK START/STOP`（以 collector 終端為準）。
 
 ### 各攻擊前 Kali 介面
 
@@ -121,7 +125,6 @@ scp USER@PI_HOST:~/…/data/live_state.json data/live_state.json
 export NIDS_LABEL_HOST=<Pi eth0 IP>
 ```
 
-（個人一鍵腳本可放各人本機／`note/private/`，不必進 Git。）  
 沒同步就手填 `NIDS_ESP32_MAC` + `NIDS_LABEL_HOST` 也可以。
 
 **`sudo` 會清掉環境變數**：若剛 `export` 過，攻擊／prepare 請用 `sudo -E`，否則只靠 `live_state.json` 裡的欄位（且 host-only 走腳本預設）。
@@ -130,6 +133,21 @@ export NIDS_LABEL_HOST=<Pi eth0 IP>
 sudo -E ./host/attacks/prepare_wifi.sh monitor
 sudo -E ./host/attacks/attack_deauth.sh
 ```
+
+#### Mode P 常見網路落差（Kali 到不了 Pi eth0）
+
+若 Pi 的 label／SSH 在 **有線 `10.0.0.x`**（接 Windows），而 Kali `eth0` 是 **VMnet1 `192.168.124.x`**，兩者**不是同一 L2**：
+
+- Windows 能 ping Pi、Kali 不能 → 正常，除非 Windows **IP forwarding** 開著，且：
+  - Kali：`ip route` 有 `10.0.0.0/24 via 192.168.124.1`
+  - Pi：回程有 `192.168.124.0/24 via <Windows 在 Pi 那段的 IP>`
+- `prepare_wifi` 會 flush Kali eth0；新版會自動加回 `via 192.168.124.1` 的路由。若 ping 仍失敗，手動：
+  `sudo ip route replace 10.0.0.0/24 via 192.168.124.1`
+- **不要**在 Kali eth0 上設成與 Pi 同網段的假地址（例如 `10.0.0.50`）——會變成 on-link ARP、更不通。
+
+細節因人而異；個人備忘可寫死自己的 IP（`note/private/`）。
+
+（個人一鍵腳本可放各人本機／`note/private/`，不必進 Git。）
 
 ### Kali：SSH 還是視窗？
 
@@ -181,19 +199,22 @@ chmod +x host/attacks/*.sh scripts/*.sh   # clone / pull 後做一次
 
 # --- Deauth ---
 sudo -E ./host/attacks/prepare_wifi.sh monitor
+# 建議：airodump 確認 BSSID + channel 後再打
 sudo -E ./host/attacks/attack_deauth.sh
 
 # --- SYN / ARP ---
 sudo -E ./host/attacks/prepare_wifi.sh managed
-# 連上 SSID 後：
+# 確認 wlan 已連熱點（腳本會 best-effort nmcli；失敗就手動連）
 sudo -E ./host/attacks/syn_flood.sh
 sudo -E ./host/attacks/arpspoof.sh
 ```
 
 同一時間 **只跑一支** 攻擊腳本。
 
-`prepare_wifi.sh`：開 `wlan0mon`、設 channel、把 host-only 設成 VMnet1 位址（預設 `192.168.124.50/24`）。  
+`prepare_wifi.sh`：開 `wlan0mon`、設 channel、把 host-only 設成 VMnet1 位址（預設 `192.168.124.50/24`），並在 Mode P 常見拓撲下補 `10.0.0.0/24 via 192.168.124.1`。  
 若你的 VMware 是別的子網（例如舊的 `.220.x`），設 `NIDS_HOSTONLY_IP=...`；介面名不同則 `NIDS_HOSTONLY_IFACE=...`。
+
+`attack_deauth.sh`：開打前會設 `NIDS_WIFI_CHANNEL`（或 live_state）。手機熱點常換頻道 → **以 airodump 為準**，`No such BSSID` 幾乎都是 CH／BSSID 過期。
 
 ---
 
@@ -207,6 +228,8 @@ sudo -E ./host/attacks/arpspoof.sh
 
 腳本預設對齊常見 VMnet1：`192.168.124.0/24`（Kali `.50`、Windows host `.1`）。  
 若 `ipconfig` 看到的是別的網段，用環境變數覆寫；模式 P 的 label 仍以 Pi IP 為準（`nids-sync` / `NIDS_LABEL_HOST`）。
+
+Mode P 若 Pi eth0 不在 VMnet1 上（例如另接 Windows `10.0.0.x`），見上方「Mode P 常見網路落差」。
 
 ---
 
@@ -248,3 +271,7 @@ idf.py flash          →  板上用新模型
 - Monitor 上 `Syslog UDP → …`／collector 有刷行，再開始打攻擊
 - 板上舊模型可能一直 `[INFERENCE] attack`：收資料時保持 `HIPS_ENABLE 0`；重訓後再開
 - Syslog 若約 `255B` 且 parse 失敗：韌體 buffer 過舊，需 flash 含較大 syslog buffer 的版本
+- Kali 印 `ATTACK FINISHED` 但 collector 沒有 `ATTACK STOP`：先確認 label IP／路由；SYN 高流量時請用新版 collector（會穿插讀 `:9999`）
+- Deauth `No such BSSID`：airodump 對 BSSID+channel，勿只信過期的 `live_state`
+- `prepare_wifi managed` 後連不上熱點：`nmcli device wifi connect <SSID> ifname wlan0`
+- USB Wi-Fi 在 VM 裡不見 `wlan0`：VMware Removable Devices → Connect

@@ -24,7 +24,7 @@
 
 ```
 Kali VM (USB Wi-Fi)  --空中攻擊-->  ESP32
-Kali VM              --label START/STOP-->  Collector (Windows)   [VMNet1 host-only]
+Kali VM              --label START/STOP-->  Collector            [OOB：見下方]
 ESP32                --syslog UDP------->  Collector             [手機熱點，IP 自動探索]
 Collector            --UDP beacon------->  ESP32                 [:5005]
 ```
@@ -33,7 +33,9 @@ Collector            --UDP beacon------->  ESP32                 [:5005]
 |------|------|------|
 | Syslog | ESP32 → Host Wi-Fi → Collector `:1514` | 特徵資料；**auto-discovery**（不必寫死 collector IP） |
 | Discovery | Collector 廣播 → ESP32 `:5005` | ESP32 學到 collector IP |
-| Label | Kali → 跑 collector 那台的 `:9999` | 看 `live_state.json` 的 `label_host`（常見是 Windows 的 VMnet1） |
+| Label | Kali → 跑 collector 那台的 `:9999` | 看 `live_state.json` 的 `label_host`（Mode W 常為 Windows VMnet1；Mode P 常為 Pi eth0） |
+
+**Mode P 注意：** Pi eth0（label／SSH）若接在 Windows 有線／USB eth（例如 `10.0.0.0/24`），而 Kali 只有 VMnet1（例如 `192.168.124.0/24`），兩邊**不是同一 L2**。Windows 能 ping Pi ≠ Kali 能 ping Pi。需要 Windows IP forwarding + Kali 路由 `via 192.168.124.1` + Pi 回程路由。細節見 [`lab_runbook.md`](lab_runbook.md)「Mode P 常見網路落差」。
 
 ### 2.0 組員要改什麼？（IP／SSID）
 
@@ -60,7 +62,7 @@ Collector            --UDP beacon------->  ESP32                 [:5005]
 | 有線 / Pi / `udp_relay.py` 轉送 | 可以（若 ESP32 側有獨立連線） | 舊架構仍可用，非必須 |
 
 **Auto-discovery 只解決「換場地改 IP」，沒有取代 out-of-band。**  
-Label 走 VMNet1 只保證 **Kali→Windows 的 START/STOP** 不斷，不保證 ESP32 的 syslog 在 deauth 時還走得通。
+Label 走 host-only／有線 OOB 只保證 **Kali→collector 的 START/STOP** 不斷，不保證 ESP32 的 syslog 在 deauth 時還走得通。
 
 **建議實驗策略：**
 
