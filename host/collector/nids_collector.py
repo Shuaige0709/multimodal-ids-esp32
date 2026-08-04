@@ -18,6 +18,9 @@ YELLOW = "\033[33m"
 UDP_IP = "0.0.0.0"
 LOG_PORT = 1514
 CONTROL_PORT = 9999
+# Under SYN flood the ESP32 floods syslog; draining it without bound starves port 9999
+# so START works (pre-flood) but STOP sits unread. Cap burst size per select turn.
+LOG_BURST_PER_TURN = 32
 
 # --- Auto-discovery: broadcast a beacon so the ESP32 finds us without a hard-coded IP ---
 DISCOVERY_PORT = 5005
@@ -264,12 +267,77 @@ def start_receiver():
     beacon_thread.start()
 
     log_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    log_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
     log_sock.bind((UDP_IP, LOG_PORT))
     log_sock.setblocking(False)
 
     ctrl_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    ctrl_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
     ctrl_sock.bind((UDP_IP, CONTROL_PORT))
     ctrl_sock.setblocking(False)
+
+    def drain_control():
+        """Apply pending START/STOP. Must run during syslog storms or STOP starves."""
+        nonlocal current_label, current_attack_type, attack_start_time
+        nonlocal current_attack, attack_count
+        while True:
+            try:
+                msg, _ = ctrl_sock.recvfrom(1024)
+            except BlockingIOError:
+                break
+            except Exception:
+                break
+
+            raw_msg = msg.decode(errors="ignore").strip()
+            try:
+                label_data = json.loads(raw_msg)
+                status = label_data.get("status")
+                attack_type = label_data.get("attack_type", "UNKNOWN")
+
+                if status == "START":
+                    current_label = 1
+                    current_attack_type = attack_type
+                    attack_start_time = datetime.now()
+                    current_attack = {"start": attack_start_time, "type": current_attack_type}
+                    attack_count = 0
+                    print(color_text(f"🚨 [ATTACK START] Switching to {current_attack_type} mode", RED))
+                    sys.stdout.flush()
+
+                elif status == "STOP":
+                    stop_time = datetime.now()
+                    duration = (stop_time - attack_start_time).total_seconds() if attack_start_time else 0
+                    print(color_text(
+                        f"✋ [ATTACK STOP] {current_attack_type} finished (Duration: {duration:.2f}s)",
+                        GREEN))
+                    print(color_text(f"   📊 Over-the-air packets in this round: {attack_count}", YELLOW))
+                    sys.stdout.flush()
+
+                    if current_attack is not None:
+                        current_attack["end"] = stop_time
+                        attack_intervals.append(current_attack)
+                        current_attack = None
+
+                    current_label = 0
+                    current_attack_type = "NONE"
+
+            except json.JSONDecodeError:
+                if raw_msg == "START":
+                    current_label = 1
+                    current_attack_type = "GENERIC_ATTACK"
+                    attack_start_time = datetime.now()
+                    current_attack = {"start": attack_start_time, "type": current_attack_type}
+                    print(color_text("🚨 [ATTACK START] Generic mode enabled", RED))
+                    sys.stdout.flush()
+                elif raw_msg == "STOP":
+                    stop_time = datetime.now()
+                    if current_attack is not None:
+                        current_attack["end"] = stop_time
+                        attack_intervals.append(current_attack)
+                        current_attack = None
+                    current_label = 0
+                    current_attack_type = "NONE"
+                    print(color_text("✋ [ATTACK STOP] Generic mode disabled", GREEN))
+                    sys.stdout.flush()
 
     print(color_text("✅ NIDS Collector Started", CYAN))
     print(f"   📡 Listening for syslog on port {LOG_PORT}")
@@ -301,65 +369,12 @@ def start_receiver():
             readable, _, _ = select.select([log_sock, ctrl_sock], [], [], 0.1)
 
             if ctrl_sock in readable:
-                while True:
-                    try:
-                        msg, _ = ctrl_sock.recvfrom(1024)
-                    except BlockingIOError:
-                        break
-                    except Exception:
-                        break
-
-                    raw_msg = msg.decode(errors="ignore").strip()
-                    
-                    try:
-                        # 解析從 Kali 傳過來的進階 JSON 標籤
-                        label_data = json.loads(raw_msg)
-                        status = label_data.get("status")
-                        attack_type = label_data.get("attack_type", "UNKNOWN")
-                        
-                        if status == "START":
-                            current_label = 1
-                            current_attack_type = attack_type
-                            attack_start_time = datetime.now()
-                            current_attack = {"start": attack_start_time, "type": current_attack_type}
-                            attack_count = 0
-                            print(color_text(f"🚨 [ATTACK START] Switching to {current_attack_type} mode", RED))
-                            
-                        elif status == "STOP":
-                            stop_time = datetime.now()
-                            duration = (stop_time - attack_start_time).total_seconds() if attack_start_time else 0
-                            print(color_text(f"✋ [ATTACK STOP] {current_attack_type} finished (Duration: {duration:.2f}s)", GREEN))
-                            print(color_text(f"   📊 Over-the-air packets in this round: {attack_count}", YELLOW))
-                            
-                            if current_attack is not None:
-                                current_attack["end"] = stop_time
-                                attack_intervals.append(current_attack)
-                                current_attack = None
-
-                            # 重設為正常狀態
-                            current_label = 0
-                            current_attack_type = "NONE"
-                            
-                    except json.JSONDecodeError:
-                        # 兼容舊版純文字標籤傳輸
-                        if raw_msg == "START":
-                            current_label = 1
-                            current_attack_type = "GENERIC_ATTACK"
-                            attack_start_time = datetime.now()
-                            current_attack = {"start": attack_start_time, "type": current_attack_type}
-                            print(color_text("🚨 [ATTACK START] Generic mode enabled", RED))
-                        elif raw_msg == "STOP":
-                            stop_time = datetime.now()
-                            if current_attack is not None:
-                                current_attack["end"] = stop_time
-                                attack_intervals.append(current_attack)
-                                current_attack = None
-                            current_label = 0
-                            current_attack_type = "NONE"
-                            print(color_text("✋ [ATTACK STOP] Generic mode disabled", GREEN))
+                drain_control()
 
             if log_sock in readable:
-                while True:
+                # Bounded burst — unbounded drain starves STOP under SYN flood.
+                for _ in range(LOG_BURST_PER_TURN):
+                    drain_control()
                     try:
                         data, addr = log_sock.recvfrom(1024)
                     except BlockingIOError:
