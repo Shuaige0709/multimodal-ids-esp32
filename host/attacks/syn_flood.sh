@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SYN flood + labeling (Kali managed Wi-Fi on the same hotspot).
-# Usage: sudo ./host/attacks/syn_flood.sh
+# Usage: sudo -E ./host/attacks/syn_flood.sh
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=netconfig.sh
@@ -11,13 +11,14 @@ TARGET_PORT="${NIDS_TARGET_PORT:-80}"
 
 if ip link show "${MON_IFACE}" >/dev/null 2>&1; then
   echo ">>> WARN: ${MON_IFACE} still up. SYN needs managed Wi-Fi."
-  echo ">>> Run: sudo ./host/attacks/prepare_wifi.sh managed"
+  echo ">>> Run: sudo -E ./host/attacks/prepare_wifi.sh managed"
   echo ">>> then join SSID '${SSID}' before re-running."
   exit 1
 fi
 
 echo ">>> Target ESP32 IP : ${TARGET_IP}:${TARGET_PORT}"
 echo ">>> Out interface   : $WIFI_IFACE"
+echo ">>> Label host      : $(get_label_host):${LABEL_PORT}"
 echo ">>> READY FOR SYN FLOOD"
 
 send_label START SYN_FLOOD

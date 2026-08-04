@@ -37,18 +37,15 @@ PY
 }
 
 get_label_host() {
-  # Priority: explicit env > live_state.label_host > live_state.collector_ip > legacy default
+  # Priority: explicit env > live_state.label_host > legacy default.
+  # Do not fall back to collector_ip (Wi-Fi/syslog path) — old Python netconfig
+  # always targeted host-only via NIDS_LABEL_HOST / hardcoded default.
   if [[ -n "${NIDS_LABEL_HOST:-}" ]]; then
     echo "$NIDS_LABEL_HOST"
     return 0
   fi
   local h
   h="$(_json_field label_host)"
-  if [[ -n "$h" && "$h" != "null" ]]; then
-    echo "$h"
-    return 0
-  fi
-  h="$(_json_field collector_ip)"
   if [[ -n "$h" && "$h" != "null" ]]; then
     echo "$h"
     return 0
@@ -127,33 +124,36 @@ resolve_bssid() {
 
 send_label() {
   # send_label START|STOP [attack_type]
-  # UDP is lossy over VMnet1; send a few times so collector is less likely to miss STOP.
+  # Same approach as pre-refactor Python netconfig: socket.sendto, a few repeats.
+  # (Bash nc -u was the unreliable rewrite — not missing ACK protocol.)
   local status="$1"
   local attack_type="${2:-NONE}"
-  local ts msg host i
+  local host repeats
   host="$(get_label_host)"
-  ts="$(date +%s)"
-  msg=$(printf '{"status":"%s","attack_type":"%s","timestamp":%s}' "$status" "$attack_type" "$ts")
+  repeats="${NIDS_LABEL_REPEATS:-3}"
   echo "[netconfig] label ${status} (${attack_type}) -> ${host}:${LABEL_PORT}"
   if [[ -z "$host" ]]; then
     echo "[netconfig] ERROR: empty label host — export NIDS_LABEL_HOST=10.0.0.2 (Pi) or sync live_state" >&2
     return 1
   fi
-  for i in 1 2 3; do
-    if command -v nc >/dev/null 2>&1; then
-      # -u UDP; -w1 timeout; some nc need -q0 / -N to exit after send
-      printf '%s' "$msg" | nc -u -w1 -q0 "$host" "$LABEL_PORT" 2>/dev/null \
-        || printf '%s' "$msg" | nc -u -w1 "$host" "$LABEL_PORT" 2>/dev/null \
-        || true
-    else
-      printf '%s' "$msg" >"/dev/udp/${host}/${LABEL_PORT}" 2>/dev/null || true
-    fi
-    sleep 0.15
-  done
-  # Reachability hint (does not prove UDP arrived, but catches wrong iface / dead Pi)
-  if ! ping -c 1 -W 1 "$host" >/dev/null 2>&1; then
-    echo "[netconfig] WARN: cannot ping ${host} — label likely dropped. Check eth0 host-only + NIDS_LABEL_HOST." >&2
-  fi
+
+  python3 - "$host" "$LABEL_PORT" "$status" "$attack_type" "$repeats" <<'PY'
+import json, socket, sys, time
+host, port, status, atk, repeats = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], int(sys.argv[5])
+payload = json.dumps({
+    "status": status,
+    "attack_type": atk,
+    "timestamp": time.time(),
+}).encode()
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+for _ in range(max(1, repeats)):
+    try:
+        sock.sendto(payload, (host, port))
+    except OSError as e:
+        print(f"[netconfig] label send failed: {e}", file=sys.stderr)
+    time.sleep(0.2)
+sock.close()
+PY
 }
 
 netconfig_summary() {
