@@ -29,15 +29,19 @@ live_state.json
 data/live_state.json
 data/live_state.json.tmp
 
-# --- Datasets (keep local; share big sets via Google Drive) ---
-data/raw/**
-data/windows/**
+# --- Datasets: ignore captures by default; whitelist locked baselines ---
+data/raw/*
+data/windows/*
 !data/raw/.gitkeep
 !data/windows/.gitkeep
 !data/README.md
+# Collector dumps outside data/ (and anything else named like this)
 nids_dataset_*.csv
 nids_windows_*.csv
 *.csv
+# Phase A locked baseline (reproduce advisor / paper numbers)
+!data/raw/nids_dataset_20260805_003226.csv
+!data/windows/nids_windows_20260805_003226.csv
 
 # --- Secrets (never push) ---
 *login*

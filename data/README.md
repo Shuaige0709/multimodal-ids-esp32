@@ -1,35 +1,41 @@
 # Data directory
 
-CSV datasets are **not tracked by Git**. Keep captures on your machine and share
-large / final datasets via **Google Drive** (link the Drive folder in the team chat
-or paste the URL below).
+Most captures stay **local** (gitignored).  
+**Phase A locked baseline** is tracked in Git so anyone can reproduce the reported metrics.
 
 ## Layout
 
-| Path | Contents |
-|------|----------|
-| `raw/` | Per-packet captures from `host/collector/nids_collector.py` (`nids_dataset_*.csv`) |
-| `windows/` | 100 ms aggregated features from `host/train/aggregate_windows.py` |
-| `live_state.json` | Runtime only (ESP32 IP/MAC); gitignored |
+| Path | Contents | Git |
+|------|----------|-----|
+| `raw/` | Per-packet captures (`nids_dataset_*.csv`) | ignored, except baseline below |
+| `windows/` | 100 ms features (`nids_windows_*.csv`) | ignored, except baseline below |
+| `live_state.json` | Runtime ESP32 IP/MAC | always ignored |
+| `README.md` | this file | tracked |
 
-## Suggested Drive layout
+## Tracked baseline (Phase A)
 
-```
-NIDS-shared/
-  raw/
-  windows/
-  models/          # optional copies of model.h for a given experiment
-  NOTES.md         # which capture corresponds to which attack / venue
-```
+| File | Role |
+|------|------|
+| `raw/nids_dataset_20260805_003226.csv` | Labeled capture (START/STOP clean) |
+| `windows/nids_windows_20260805_003226.csv` | Aggregated 100 ms windows used for eval |
 
-When a Drive dataset is ready for training:
+Reproduce:
 
 ```bash
-# download into local folders, then:
-python host/train/aggregate_windows.py data/raw/<file>.csv
-python host/train/analyze_and_train.py
+python host/train/check_dataset_balance.py --dataset data/windows/nids_windows_20260805_003226.csv --strict
+python host/train/analyze_and_train.py --dataset data/windows/nids_windows_20260805_003226.csv
 ```
 
-## Google Drive link (fill in)
+To rebuild windows from raw:
 
-- Team dataset folder: _TODO — paste URL here_
+```bash
+python host/train/aggregate_windows.py data/raw/nids_dataset_20260805_003226.csv
+```
+
+## New captures (not the baseline)
+
+1. Collect → `data/raw/nids_dataset_*.csv` (stays local / untracked)
+2. Aggregate → `data/windows/…`
+3. If a run becomes a **new locked baseline**, add an exception in `.gitignore` (same pattern as above) and commit those two CSVs + update this README.
+
+Do **not** commit trial dumps, failed sessions, or `live_state.json`.

@@ -26,7 +26,7 @@ host/collector/       nids_collector.py
 host/attacks/         *.sh + netconfig.sh + prepare_wifi.sh
 host/train/           aggregate / analyze (Python)
 scripts/              session_windows.ps1, print_live_targets.*, bringup.*（可選包裝）
-data/                 local CSV (gitignored) → Google Drive for sharing
+data/                 captures (mostly local); Phase A baseline CSVs are in Git — see data/README.md
 note/                 note.md + lab_runbook.md
 archive/              old duplicates / secrets (do not push logins)
 ```
@@ -82,6 +82,6 @@ chmod +x host/attacks/*.sh scripts/*.sh
 3. Kali 攻擊腳本讀 `data/live_state.json`；不通再用 `print_live_targets` 貼 `export`
 4. VMware host-only 子網以**各人電腦**為準，見 `note/note.md` §2.0
 
-- Datasets are **not** in Git → see `data/README.md`
+- Datasets: trial captures stay local; Phase A baseline is in Git → see `data/README.md`
 - Team notes: `note/lab_runbook.md`, `note/note.md`
 - Do not commit `sdkconfig`, `build/`, CSV, or secrets under `archive/` / `note/private/`

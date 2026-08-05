@@ -133,7 +133,7 @@ scripts/
   print_live_targets.ps1 / .sh
   serial_collector.py      AP isolation / deauth 備援
 
-data/                      本機資料（不進 Git）→ 大檔用 Google Drive
+data/                      多數本機；Phase A 基線 CSV 進 Git（見 `data/README.md`）
 docs/                      筆記、bib、圖、計畫 PDF
 archive/                   舊雙份腳本、帳密（勿 push login）
 note/                      note.md + lab_runbook.md
@@ -210,7 +210,7 @@ python host/train/analyze_and_train.py
 # 再 flash 一次才會讓板上模型變新
 ```
 
-大 CSV → Google Drive（見 `data/README.md`），**不要 commit 進 Git**。
+試收 CSV 勿亂 commit；鎖定基線才進 Git（見 `data/README.md`）。
 
 ---
 
@@ -251,9 +251,9 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 
 ## 10. Git / 協作注意
 
-- **勿 commit：** `data/raw/**`、`data/windows/**`、`live_state.json`、`build/`、`sdkconfig`、帳密（`archive/raspberry login.txt`）
+- **勿 commit：** 試收 `data/raw|windows`（基線除外）、`live_state.json`、`build/`、`sdkconfig`、帳密
 - `model.h` 由訓練腳本產生；PR 時說明用哪份資料集訓練
-- 組員有 ESP32、無 Pi：自己 flash + 可跑 train；攻擊與平衡資料集可集中一人收完再丟 Drive
+- 組員：`git pull` 後可用已追蹤的 Phase A windows 直接 train；新場次仍自行收
 
 ---
 
@@ -272,6 +272,6 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 | `note/improvement_directions.md` | **可改進方向**（特徵合流、資料、攻擊覆蓋、與組員對齊） |
 | `note/compare_wids_vs_nids.md` | WIDS 定義、與 `esp32_packet_monitor` 對照 |
 | `README.md` | 快速上手 |
-| `data/README.md` | 大檔分享約定（如 Drive） |
+| `data/README.md` | 哪些 CSV 進 Git／如何 reproduce 基線 |
 | `docs/` | 計畫書 PDF、架構圖、figures |
 | `note/private/` | **個人備忘（gitignore，勿 push）** |
