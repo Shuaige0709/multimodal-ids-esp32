@@ -59,6 +59,8 @@ regex = re.compile(
     r'(?: seq_jump="(?P<seq_jump>[^"]+)")?'
     r'(?: ap_bssid="(?P<ap_bssid>[^"]+)")?'
     r'(?: channel="(?P<channel>[^"]+)")?'
+    r'(?: win_pkts="(?P<win_pkts>[^"]+)")?'
+    r'(?: win_dens="(?P<win_dens>[^"]+)")?'
     r'\]'
 )
 
@@ -66,6 +68,7 @@ _META_KEYS = (
     "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
     "host_mac", "attack", "deauth_tgt", "seq_jump", "ap_bssid", "channel",
+    "win_pkts", "win_dens",
 )
 _KV_RE = re.compile(r'([a-z_]+)="([^"]*)"')
 _PEN_RE = re.compile(r'\[meta@(\S+)')
@@ -83,7 +86,8 @@ def parse_syslog_meta(log_line):
     pen_m = _PEN_RE.search(log_line)
     if pen_m:
         pairs["pen"] = pen_m.group(1)
-    str_keys = ("subtype", "host_mac", "attack", "ap_bssid", "channel")
+    str_keys = ("subtype", "host_mac", "attack", "ap_bssid", "channel",
+                "win_pkts", "win_dens")
     for key in _META_KEYS:
         pairs.setdefault(key, "" if key in str_keys else "0")
     return pairs, True
@@ -362,7 +366,8 @@ def start_receiver():
             "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
             "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
             "host_mac", "pred_attack", "deauth_tgt", "seq_jump",
-            "ap_bssid", "channel", "label", "attack_type", "timestamp"
+            "ap_bssid", "channel", "win_pkts", "win_dens",
+            "label", "attack_type", "timestamp"
         ])
 
         while True:
@@ -454,6 +459,7 @@ def start_receiver():
                         d["dropped"], d.get("host_mac", ""), d.get("attack", ""),
                         d.get("deauth_tgt", "0"), d.get("seq_jump", "0"),
                         d.get("ap_bssid", ""), d.get("channel", ""),
+                        d.get("win_pkts", ""), d.get("win_dens", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
                     f.flush()
@@ -466,10 +472,13 @@ def start_receiver():
                         attack_count += 1
                         status_indicator = format_status(1, packet_attack_type)
 
+                    wp = d.get("win_pkts") or "-"
+                    wd = d.get("win_dens") or "-"
                     print(
                         f"{status_indicator} [{gen_time.strftime('%H:%M:%S.%f')[:-3]}] (Recv: {log_time.strftime('%H:%M:%S.%f')[:-3]}) "
                         f"RSSI={d['rssi']:>4}dBm, SNR={d['snr']:>3}dB, "
-                        f"IPAT={d['ipat']:>6}us, HEAP={d['heap']:>6}B | Type: {packet_attack_type}"
+                        f"IPAT={d['ipat']:>6}us, HEAP={d['heap']:>6}B, "
+                        f"win={wp}/{wd} | Type: {packet_attack_type}"
                     )
 
 

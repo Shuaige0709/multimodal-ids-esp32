@@ -10,6 +10,10 @@ Statistical Aggregation" representation. The same feature definitions are
 computed on-device in the firmware, so the offline dataset and the deployed
 model see identical features.
 
+When raw rows include firmware win_pkts / win_dens, total_packets and
+packet_density prefer those values (syslog is thinned; CSV row count != air).
+Legacy captures without those columns keep counting CSV rows and warn.
+
 Dependencies: standard library + numpy only (no pandas), to keep the pipeline
 easy to reproduce on any machine.
 
@@ -35,6 +39,7 @@ if _ROOT not in sys.path:
 from host.paths import DATA_RAW, DATA_WINDOWS, ensure_data_dirs  # noqa: E402
 from host.train.nids_features import (  # noqa: E402
     WINDOW_FEATURES, LABEL_COL, ATTACK_TYPE_COL, WINDOW_START_COL,
+    rf_sample_valid,
 )
 
 
@@ -52,8 +57,12 @@ def _majority_attack(values):
     return Counter(vals).most_common(1)[0][0]
 
 
-def aggregate_rows(rows, window_sec):
-    """Group per-packet rows into fixed windows and compute canonical features."""
+def aggregate_rows(rows, window_sec, density_source_stats=None):
+    """Group per-packet rows into fixed windows and compute canonical features.
+
+    Prefer firmware-emitted win_pkts / win_dens (same source as on-device
+    nids_predict) when present; fall back to counting CSV rows (syslog-thinned).
+    """
     windows = OrderedDict()  # bin_index -> list of rows
     for r in rows:
         ts = r.get("timestamp")
@@ -66,13 +75,46 @@ def aggregate_rows(rows, window_sec):
         bin_index = int(dt.timestamp() // window_sec)
         windows.setdefault(bin_index, []).append((dt, r))
 
+    used_fw = 0
+    used_csv = 0
     out = []
     for bin_index in sorted(windows.keys()):
         entries = sorted(windows[bin_index], key=lambda x: x[0])
         group = [r for _, r in entries]
-        total = len(group)
-        rssi = np.array([_to_float(r.get("rssi")) for r in group], dtype=float)
-        snr = np.array([_to_float(r.get("snr")) for r in group], dtype=float)
+        csv_total = len(group)
+
+        fw_pkts = []
+        fw_dens = []
+        for r in group:
+            raw_pk = r.get("win_pkts")
+            if raw_pk not in (None, ""):
+                fw_pkts.append(_to_float(raw_pk))
+            raw_dn = r.get("win_dens")
+            if raw_dn not in (None, ""):
+                fw_dens.append(_to_float(raw_dn))
+
+        if fw_pkts:
+            # Max over thinned samples in this bin ≈ closed-window peak when
+            # syslog lands near a window boundary; mid-window samples are lower.
+            total = int(max(fw_pkts))
+            if fw_dens:
+                density = float(max(fw_dens))
+            else:
+                density = total / window_sec if window_sec > 0 else float(total)
+            used_fw += 1
+        else:
+            total = csv_total
+            density = total / window_sec if window_sec > 0 else float(total)
+            used_csv += 1
+
+        rssi_all = np.array([_to_float(r.get("rssi")) for r in group], dtype=float)
+        snr_all = np.array([_to_float(r.get("snr")) for r in group], dtype=float)
+        rf_ok = np.array(
+            [rf_sample_valid(float(a), float(b)) for a, b in zip(rssi_all, snr_all)],
+            dtype=bool,
+        )
+        rssi = rssi_all[rf_ok]
+        snr = snr_all[rf_ok]
         subs = [(r.get("subtype") or "").strip() for r in group]
 
         beacon = sum(1 for s in subs if s == "BEACON")
@@ -90,16 +132,17 @@ def aggregate_rows(rows, window_sec):
         row = {
             WINDOW_START_COL: datetime.fromtimestamp(bin_index * window_sec).isoformat(),
             "total_packets": total,
-            "packet_density": total / window_sec,
+            "packet_density": density,
             "beacon_packets": beacon,
             "deauth_packets": deauth,
             "deauth_targeted": deauth_tgt,
             "probe_packets": probe,
             "auth_packets": auth,
             "seq_jump": seq_jump,
-            "rssi_mean": float(rssi.mean()) if total else 0.0,
-            "rssi_var": float(rssi.var()) if total > 1 else 0.0,  # population variance (matches firmware)
-            "snr_mean": float(snr.mean()) if total else 0.0,
+            # RF means use cleaned samples only (dirty → leave 0 / empty-window default)
+            "rssi_mean": float(rssi.mean()) if len(rssi) else 0.0,
+            "rssi_var": float(rssi.var()) if len(rssi) > 1 else 0.0,
+            "snr_mean": float(snr.mean()) if len(snr) else 0.0,
             "heap": _to_float(last.get("heap")),
             "minheap": _to_float(last.get("minheap")),
             "reconn": _to_float(last.get("reconn")),
@@ -110,6 +153,10 @@ def aggregate_rows(rows, window_sec):
             ATTACK_TYPE_COL: atk,
         }
         out.append(row)
+
+    if density_source_stats is not None:
+        density_source_stats["firmware"] = density_source_stats.get("firmware", 0) + used_fw
+        density_source_stats["csv_rows"] = density_source_stats.get("csv_rows", 0) + used_csv
     return out
 
 
@@ -136,6 +183,7 @@ def main():
 
     window_sec = args.window_ms / 1000.0
     all_windows = []
+    density_stats = {"firmware": 0, "csv_rows": 0}
     for path in inputs:
         try:
             with open(path, newline="", encoding="utf-8") as fh:
@@ -146,12 +194,28 @@ def main():
         if not rows or "timestamp" not in rows[0]:
             print(f"  skip {path}: no 'timestamp' column")
             continue
-        w = aggregate_rows(rows, window_sec)
-        print(f"  {os.path.basename(path)}: {len(rows)} packets -> {len(w)} windows")
+        has_win = "win_pkts" in rows[0] and any(
+            (r.get("win_pkts") not in (None, "")) for r in rows[:200]
+        )
+        w = aggregate_rows(rows, window_sec, density_source_stats=density_stats)
+        src = "firmware win_pkts" if has_win else "CSV row count (legacy)"
+        print(f"  {os.path.basename(path)}: {len(rows)} packets -> {len(w)} windows [{src}]")
         all_windows.extend(w)
 
     if not all_windows:
         raise SystemExit("Nothing aggregated.")
+
+    if density_stats["firmware"] == 0 and density_stats["csv_rows"] > 0:
+        print(
+            "  WARN: no win_pkts in input - total_packets/packet_density from "
+            "syslog-thinned CSV rows (offline != on-device). Flash firmware that "
+            "emits win_pkts/win_dens for a correct contract."
+        )
+    elif density_stats["firmware"] > 0:
+        print(
+            f"  density source: firmware={density_stats['firmware']} windows, "
+            f"legacy CSV fallback={density_stats['csv_rows']} windows"
+        )
 
     out_path = args.out
     if not out_path:
@@ -169,9 +233,15 @@ def main():
     n_attack = sum(1 for r in all_windows if r[LABEL_COL] == 1)
     n_normal = len(all_windows) - n_attack
     atk_counts = Counter(r[ATTACK_TYPE_COL] for r in all_windows if r[LABEL_COL] == 1)
+    dens_vals = [r["packet_density"] for r in all_windows]
     print(f"\nWrote {len(all_windows)} windows -> {out_path}")
     print(f"  normal windows: {n_normal}   attack windows: {n_attack}")
     print(f"  attack types  : {dict(atk_counts)}")
+    if dens_vals:
+        print(
+            f"  packet_density: min={min(dens_vals):.1f} max={max(dens_vals):.1f} "
+            f"mean={sum(dens_vals)/len(dens_vals):.1f} nunique={len(set(dens_vals))}"
+        )
 
 
 if __name__ == "__main__":

@@ -10,10 +10,14 @@ The order of WINDOW_FEATURES is the contract between:
 Do not reorder without regenerating model.h and reflashing.
 """
 
-# Full multimodal feature set for one 100 ms window.
+# Full multimodal feature set for one 100 ms tumbling window (non-overlapping).
+# total_packets / packet_density MUST match on-device nids_window_features_t.
+# Raw syslog is thinned (every N packets); firmware emits win_pkts / win_dens
+# so aggregate_windows can prefer those over CSV row counts. Legacy CSVs without
+# win_* fall back to row counts (offline != on-device; see density contract).
 WINDOW_FEATURES = [
-    "total_packets",    # packets observed in the window
-    "packet_density",   # total_packets / window_seconds (lambda)
+    "total_packets",    # packets in the window (prefer firmware win_pkts)
+    "packet_density",   # lambda; prefer firmware win_dens
     "beacon_packets",   # 802.11 beacon count
     "deauth_packets",   # deauth + disassoc count
     "deauth_targeted",  # P0 WIDS: deauth/disassoc aimed at us or broadcast
@@ -46,11 +50,17 @@ NIDS_BASELINE_FEATURES = [
     "rssi_mean", "rssi_var", "snr_mean",
 ]
 
-# P0 WIDS-only delta (must match teammate confluence plan).
+# P0 WIDS-only delta
 WIDS_P0_FEATURES = ["deauth_targeted", "seq_jump"]
 
 # Host-only (HIDS) features.
 HIDS_FEATURES = ["heap", "minheap", "reconn", "qpeak", "udpfail", "backlog"]
+
+# HIDS without free-heap (heap often dominates the shallow DT).
+HIDS_NO_HEAP_FEATURES = ["minheap", "reconn", "qpeak", "udpfail", "backlog"]
+
+# Full multimodal minus heap — forces wireless + other host counters.
+NO_HEAP_FEATURES = [f for f in WINDOW_FEATURES if f != "heap"]
 
 LABEL_COL = "label"
 ATTACK_TYPE_COL = "attack_type"
@@ -61,3 +71,20 @@ REQUIRED_ATTACK_TYPES = ("DEAUTH", "SYN_FLOOD", "ARP_SPOOF")
 MIN_NORMAL_WINDOWS = 200
 MIN_WINDOWS_PER_ATTACK = 150
 MAX_HEAP_IMPORTANCE = 0.70  # export tree: heap must not dominate after rebalance
+
+# RF sanity (promiscuous metadata). Positive RSSI with snr≈rssi usually means
+# noise_floor≈0 / bad sample — drop from window means. Keep in sync with
+# aggregate_windows.py; firmware still uses raw rx_ctrl until cleaned on-device.
+RSSI_VALID_MIN = -100.0
+RSSI_VALID_MAX = 0.0  # Espressif allows slight +; we treat >0 as dirty for training
+
+
+def rf_sample_valid(rssi: float, snr=None) -> bool:
+    """Return True if a per-packet RSSI(/SNR) sample should enter window stats."""
+    if rssi != rssi:  # NaN
+        return False
+    if rssi < RSSI_VALID_MIN or rssi > RSSI_VALID_MAX:
+        return False
+    if snr is not None and snr == snr and rssi > 0 and abs(snr - rssi) < 1e-6:
+        return False
+    return True

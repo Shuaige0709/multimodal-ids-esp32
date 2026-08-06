@@ -32,6 +32,13 @@ To rebuild windows from raw:
 python host/train/aggregate_windows.py data/raw/nids_dataset_20260805_003226.csv
 ```
 
+## Density contract (win_pkts / win_dens)
+
+Firmware syslog may include `win_pkts` / `win_dens` (on-device 100 ms window totals).  
+Collector writes them to raw CSV; `aggregate_windows.py` prefers them for
+`total_packets` / `packet_density`. Older captures without those fields still
+aggregate via CSV row count and print a WARN (thinned syslog ≠ air).
+
 ## New captures (not the baseline)
 
 1. Collect → `data/raw/nids_dataset_*.csv` (stays local / untracked)

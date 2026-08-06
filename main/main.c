@@ -496,7 +496,8 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
     // pkt->rx_ctrl.mcs;
 }
 
-void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap, int64_t uptime_ms) {
+void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap, int64_t uptime_ms,
+                    uint32_t win_pkts, double win_density) {
     // 1. produce ISO 8601 timestamp with milliseconds precision
     // Note: Currently we are not synchronizing with NTP, so this timestamp is relative to the device startup time
     struct timeval tv;
@@ -506,13 +507,14 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", tm_info);
 
     // 2. package the log message in RFC 5424 format
-    // format: <PRI>1 TIMESTAMP HOSTNAME APPNAME PROCID MSGID MSG
+    // win_pkts / win_dens: on-device 100 ms tumbling-window counters (same source as nids_predict).
     int n = snprintf(buf, size,
         "<%d>1 %s.%03ldZ %s %s - - "
         "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" "
         "heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" "
         "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\" "
-        "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\"]",
+        "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\" "
+        "win_pkts=\"%lu\" win_dens=\"%.1f\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
@@ -521,7 +523,8 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         (unsigned long)syslog_backlog_count, (unsigned long)syslog_backlog_dropped,
         sta_mac_str, attack_detected ? 1 : 0,
         (unsigned)info->deauth_targeted, (unsigned)info->seq_jump,
-        ap_bssid_str, (unsigned)ap_channel);
+        ap_bssid_str, (unsigned)ap_channel,
+        (unsigned long)win_pkts, win_density);
     if (n < 0 || (size_t)n >= size) {
         ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=512",
                  n, (unsigned)size);
@@ -652,8 +655,8 @@ void nids_analysis_task(void* arg){
     static int8_t last_rssi = 0;
     static uint32_t last_ipat = 0;
 
-    // --- On-device 100 ms window aggregation state (feeds the edge inference model) ---
-    const int64_t WINDOW_US = 100000; // 100 ms sliding epoch (matches the dataset methodology)
+    // --- On-device 100 ms tumbling window (non-overlapping; matches offline bins) ---
+    const int64_t WINDOW_US = 100000; // 100 ms
     int64_t window_start_us = esp_timer_get_time();
     uint32_t w_total = 0, w_beacon = 0, w_deauth = 0, w_probe = 0, w_auth = 0;
     uint32_t w_deauth_tgt = 0, w_seq_jump = 0;
@@ -691,7 +694,7 @@ void nids_analysis_task(void* arg){
             last_rssi = info.rssi;
             last_ipat = info.ipat;
 
-            // ---- 100 ms window aggregation feeding the on-device inference model ----
+            // ---- 100 ms tumbling window aggregation (feeds on-device inference) ----
             w_total++;
             w_rssi_sum += info.rssi;
             w_rssi_sq_sum += (int64_t)info.rssi * info.rssi;
@@ -706,9 +709,15 @@ void nids_analysis_task(void* arg){
             if (info.seq_jump)        w_seq_jump++;
 
             int64_t win_now_us = esp_timer_get_time();
+            uint32_t closed_win_pkts = 0;
+            double closed_win_density = 0.0;
+            bool just_closed_window = false;
             if ((win_now_us - window_start_us) >= WINDOW_US) {
                 double dt = (double)(win_now_us - window_start_us) / 1000000.0;
                 if (dt <= 0) dt = 0.1;
+                closed_win_pkts = w_total;
+                closed_win_density = (double)w_total / dt;
+                just_closed_window = true;
                 double rssi_mean = w_rssi_cnt ? (double)w_rssi_sum / w_rssi_cnt : 0.0;
                 double rssi_var = 0.0;
                 if (w_rssi_cnt > 0) {
@@ -719,7 +728,7 @@ void nids_analysis_task(void* arg){
 
                 nids_window_features_t f;
                 f.total_packets  = (double)w_total;
-                f.packet_density = (double)w_total / dt;
+                f.packet_density = closed_win_density;
                 f.beacon_packets = (double)w_beacon;
                 f.deauth_packets = (double)w_deauth;
                 f.deauth_targeted = (double)w_deauth_tgt;
@@ -775,7 +784,22 @@ void nids_analysis_task(void* arg){
                 uint32_t free_heap = esp_get_free_heap_size();
                 int64_t uptime_ms = esp_timer_get_time() / 1000; // uptime in milliseconds
                 stack_mark = uxTaskGetStackHighWaterMark(NULL); // check stack again before sending
-                encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms);
+                // Prefer just-closed window totals so syslog matches nids_predict inputs.
+                uint32_t report_pkts;
+                double report_dens;
+                if (just_closed_window) {
+                    report_pkts = closed_win_pkts;
+                    report_dens = closed_win_density;
+                } else {
+                    int64_t elapsed_us = esp_timer_get_time() - window_start_us;
+                    if (elapsed_us < 1000) {
+                        elapsed_us = 1000;
+                    }
+                    report_pkts = w_total;
+                    report_dens = (double)w_total / ((double)elapsed_us / 1000000.0);
+                }
+                encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms,
+                               report_pkts, report_dens);
 
                 if(SYSlOG_MODE == 1){
                     if (wifi_connected && sock >= 0 && udp_ready) {
