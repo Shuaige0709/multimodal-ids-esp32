@@ -5,7 +5,7 @@
  * Feature order MUST match nids_features.WINDOW_FEATURES / firmware fill order.
  * DO NOT edit by hand — regenerate with: python analyze_and_train.py
  *
- * Generated: 2026-08-03T00:28:32
+ * Generated: 2026-08-06T13:07:31
  */
 #ifndef NIDS_MODEL_H
 #define NIDS_MODEL_H
@@ -61,59 +61,63 @@ static inline int nids_predict(const nids_window_features_t *f)
     /* --- m2cgen-generated tree --- */
 
     double var0[2];
-    if (input[11] <= 69810.0) {
-        if (input[11] <= 65802.0) {
-            if (input[11] <= 65796.0) {
-                if (input[11] <= 65746.0) {
-                    memcpy(var0, (double[]){0.1150012377258849, 0.884998762274115}, 2 * sizeof(double));
+    if (input[11] <= 69784.0) {
+        if (input[11] <= 68124.0) {
+            if (input[11] <= 65842.0) {
+                if (input[11] <= 65806.0) {
+                    memcpy(var0, (double[]){0.8608666180533436, 0.1391333819466563}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.5132226144320352, 0.4867773855679648}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.20772051334284022, 0.7922794866571599}, 2 * sizeof(double));
                 }
             } else {
-                memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                if (input[11] <= 65908.0) {
+                    memcpy(var0, (double[]){0.9922251676837405, 0.007774832316259522}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){0.2800658978583195, 0.7199341021416805}, 2 * sizeof(double));
+                }
             }
         } else {
-            if (input[11] <= 69688.0) {
-                if (input[12] <= 44540.0) {
-                    memcpy(var0, (double[]){0.11622772492019666, 0.8837722750798034}, 2 * sizeof(double));
+            if (input[10] <= 19.5) {
+                if (input[11] <= 69764.0) {
+                    memcpy(var0, (double[]){0.13648269840540408, 0.8635173015945959}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.013032783828855952, 0.986967216171144}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.6749721085905541, 0.3250278914094459}, 2 * sizeof(double));
                 }
             } else {
-                if (input[14] <= 95.0) {
-                    memcpy(var0, (double[]){0.13090195268106206, 0.8690980473189379}, 2 * sizeof(double));
+                if (input[3] <= 0.5) {
+                    memcpy(var0, (double[]){0.06460622830144369, 0.9353937716985563}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.9353142013472363, 0.06468579865276367}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
                 }
             }
         }
     } else {
-        if (input[11] <= 69872.0) {
-            if (input[3] <= 0.5) {
-                if (input[10] <= -0.5) {
-                    memcpy(var0, (double[]){0.4356398279144267, 0.5643601720855733}, 2 * sizeof(double));
+        if (input[10] <= 10.75) {
+            if (input[10] <= -2.5) {
+                if (input[8] <= -93.5) {
+                    memcpy(var0, (double[]){0.7486579754601228, 0.2513420245398773}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.6055892563044362, 0.3944107436955637}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.5374155199088022, 0.4625844800911978}, 2 * sizeof(double));
                 }
             } else {
-                if (input[8] <= -86.5) {
-                    memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                if (input[8] <= -80.5) {
+                    memcpy(var0, (double[]){0.842102886048507, 0.15789711395149295}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.011453314410204017, 0.988546685589796}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.6937631394533987, 0.30623686054660126}, 2 * sizeof(double));
                 }
             }
         } else {
-            if (input[9] <= 4.25) {
-                if (input[8] <= -86.5) {
-                    memcpy(var0, (double[]){0.8872984211587605, 0.1127015788412395}, 2 * sizeof(double));
+            if (input[10] <= 24.75) {
+                if (input[10] <= 19.25) {
+                    memcpy(var0, (double[]){0.47810168960588956, 0.5218983103941103}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.7872749342504539, 0.2127250657495461}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.7199316385387732, 0.2800683614612269}, 2 * sizeof(double));
                 }
             } else {
-                if (input[11] <= 69894.0) {
-                    memcpy(var0, (double[]){0.7067354622786223, 0.2932645377213778}, 2 * sizeof(double));
+                if (input[8] <= -64.25) {
+                    memcpy(var0, (double[]){0.16338790599419054, 0.8366120940058095}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.09124954987396472, 0.9087504501260354}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.5465812494645558, 0.4534187505354442}, 2 * sizeof(double));
                 }
             }
         }

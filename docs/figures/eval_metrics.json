@@ -1,65 +1,65 @@
 {
-  "dataset": "nids_windows_20260802_234245_fixed.csv",
-  "n_windows": 4815,
-  "n_normal": 3005,
-  "n_attack": 1810,
+  "dataset": "nids_windows_20260805_003226.csv",
+  "n_windows": 6575,
+  "n_normal": 3746,
+  "n_attack": 2829,
   "class_balance_note": "Metrics use class_weight=balanced; prefer F1/Recall/AUC over accuracy when classes are imbalanced. Re-collect more NORMAL windows for paper.",
   "models": [
     {
       "name": "DecisionTree",
-      "precision": 0.7947598253275109,
-      "recall": 0.6703499079189686,
-      "f1": 0.7272727272727273,
-      "auc": 0.8666805502811432,
-      "accuracy": 0.8110726643598616,
-      "fpr": 0.10421286031042129,
+      "precision": 0.7083775185577943,
+      "recall": 0.7868080094228505,
+      "f1": 0.7455357142857143,
+      "auc": 0.8504719808524996,
+      "accuracy": 0.7688798783578307,
+      "fpr": 0.24466192170818504,
       "cm": [
         [
-          808,
-          94
+          849,
+          275
         ],
         [
-          179,
-          364
+          181,
+          668
         ]
       ],
       "per_attack_recall": {
-        "ARP_SPOOF": 0.272108843537415,
-        "DEAUTH": 0.7112068965517241,
-        "SYN_FLOOD": 0.9695121951219512
+        "ARP_SPOOF": 0.9737991266375546,
+        "DEAUTH": 0.6166281755196305,
+        "SYN_FLOOD": 0.9518716577540107
       }
     },
     {
       "name": "RandomForest",
-      "precision": 0.8190255220417634,
-      "recall": 0.6500920810313076,
-      "f1": 0.7248459958932238,
-      "auc": 0.8744788540301275,
-      "accuracy": 0.8145328719723184,
-      "fpr": 0.08647450110864745,
+      "precision": 0.765142150803461,
+      "recall": 0.7290930506478209,
+      "f1": 0.7466827503015682,
+      "auc": 0.8502058104783102,
+      "accuracy": 0.7871262037506336,
+      "fpr": 0.16903914590747332,
       "cm": [
         [
-          824,
-          78
+          934,
+          190
         ],
         [
-          190,
-          353
+          230,
+          619
         ]
       ],
       "per_attack_recall": {
-        "ARP_SPOOF": 0.17687074829931973,
-        "DEAUTH": 0.728448275862069,
-        "SYN_FLOOD": 0.9634146341463414
+        "ARP_SPOOF": 0.9563318777292577,
+        "DEAUTH": 0.5080831408775982,
+        "SYN_FLOOD": 0.9625668449197861
       }
     }
   ],
   "ablation": {
-    "full_f1": 0.7272727272727273,
-    "nids_only_f1": 0.4470588235294118,
-    "no_p0_wids_f1": 0.7272727272727273,
-    "baseline_rf_only_f1": 0.4490861618798956,
-    "fusion_lift_f1": 0.2802139037433155,
+    "full_f1": 0.7455357142857143,
+    "nids_only_f1": 0.4759036144578313,
+    "no_p0_wids_f1": 0.7455357142857143,
+    "baseline_rf_only_f1": 0.4759036144578313,
+    "fusion_lift_f1": 0.269632099827883,
     "wids_p0_lift_f1": 0.0,
     "hids_features": [
       "heap",
@@ -85,18 +85,60 @@
     "wids_p0_features": [
       "deauth_targeted",
       "seq_jump"
-    ]
+    ],
+    "no_heap_f1": 0.4759036144578313,
+    "no_heap_fpr": 0.14501779359430605,
+    "hids_sans_heap_f1": 0.4759036144578313,
+    "hids_sans_heap_fpr": 0.14501779359430605,
+    "exportable_no_heap_f1": 0.4759036144578313,
+    "exportable_no_heap_fpr": 0.14501779359430605,
+    "exportable_no_heap_heap_importance": 0.0,
+    "heap_drop_f1_cost": 0.269632099827883,
+    "no_heap_features": [
+      "total_packets",
+      "packet_density",
+      "beacon_packets",
+      "deauth_packets",
+      "deauth_targeted",
+      "probe_packets",
+      "auth_packets",
+      "seq_jump",
+      "rssi_mean",
+      "rssi_var",
+      "snr_mean",
+      "minheap",
+      "reconn",
+      "qpeak",
+      "udpfail",
+      "backlog"
+    ],
+    "hids_no_heap_features": [
+      "minheap",
+      "reconn",
+      "qpeak",
+      "udpfail",
+      "backlog"
+    ],
+    "forced_wireless_f1": 0.4759036144578313,
+    "forced_wireless_fpr": 0.14501779359430605,
+    "forced_wireless_importances": {
+      "snr_mean": 0.8334286031021054,
+      "rssi_mean": 0.15919026880389403,
+      "deauth_packets": 0.005141992248587421,
+      "seq_jump": 0.002239135845413145
+    }
   },
   "decision_tree": {
-    "fpr": 0.10421286031042129,
+    "fpr": 0.24466192170818504,
     "per_attack_recall": {
-      "ARP_SPOOF": 0.272108843537415,
-      "DEAUTH": 0.7112068965517241,
-      "SYN_FLOOD": 0.9695121951219512
+      "ARP_SPOOF": 0.9737991266375546,
+      "DEAUTH": 0.6166281755196305,
+      "SYN_FLOOD": 0.9518716577540107
     },
-    "heap_importance": 0.893780471796483
+    "heap_importance": 0.8782706637307658
   },
   "exported_model": "DecisionTree",
+  "export_variant": "full",
   "feature_order": [
     "total_packets",
     "packet_density",
@@ -115,5 +157,234 @@
     "qpeak",
     "udpfail",
     "backlog"
-  ]
+  ],
+  "dataset_report": {
+    "dataset": "nids_windows_20260805_003226.csv",
+    "n_windows": 6575,
+    "n_normal": 3746,
+    "n_attack": 2829,
+    "attack_fraction": 0.4302661596958175,
+    "attack_type_counts": {
+      "NONE": 3746,
+      "DEAUTH": 1472,
+      "SYN_FLOOD": 645,
+      "ARP_SPOOF": 712
+    },
+    "time_range": {
+      "start": "2026-08-05 00:32:26.200000",
+      "end": "2026-08-05 00:54:02.900000"
+    },
+    "warnings": [
+      "packet_density nearly constant (syslog thinning) - see density contract note",
+      "minheap has ~zero variance in this capture"
+    ],
+    "packet_density_nunique": 4,
+    "total_packets_mode": 1
+  },
+  "pca": {
+    "n_components": 10,
+    "explained_variance_ratio": [
+      0.21854120729258392,
+      0.18677947073854445,
+      0.11204429287022594,
+      0.09750350335186125,
+      0.08493755088873946,
+      0.07430248387160283,
+      0.07076035803758583,
+      0.06352608895151038,
+      0.03994948917569507,
+      0.030492359677258777
+    ],
+    "cumulative_variance": [
+      0.21854120729258392,
+      0.40532067803112837,
+      0.5173649709013544,
+      0.6148684742532156,
+      0.699806025141955,
+      0.7741085090135579,
+      0.8448688670511437,
+      0.9083949560026541,
+      0.9483444451783491,
+      0.978836804855608
+    ],
+    "pc1_top_loadings": [
+      {
+        "feature": "snr_mean",
+        "loading": 0.504859006329488
+      },
+      {
+        "feature": "rssi_mean",
+        "loading": 0.4850752460719914
+      },
+      {
+        "feature": "deauth_packets",
+        "loading": 0.4723610143858763
+      },
+      {
+        "feature": "deauth_targeted",
+        "loading": 0.3887485356227687
+      },
+      {
+        "feature": "packet_density",
+        "loading": 0.1855854226283155
+      },
+      {
+        "feature": "total_packets",
+        "loading": 0.18558542262830924
+      }
+    ],
+    "pc2_top_loadings": [
+      {
+        "feature": "packet_density",
+        "loading": 0.6013480814972932
+      },
+      {
+        "feature": "total_packets",
+        "loading": 0.6013480814972727
+      },
+      {
+        "feature": "seq_jump",
+        "loading": 0.3207833163239905
+      },
+      {
+        "feature": "rssi_var",
+        "loading": 0.30431971250366857
+      },
+      {
+        "feature": "deauth_packets",
+        "loading": -0.16361623563071653
+      },
+      {
+        "feature": "deauth_targeted",
+        "loading": -0.15294803196354975
+      }
+    ],
+    "heap_loading_pc1": 0.009173727229270488,
+    "note": "PCA is offline analysis only (scaler+PCA fit on train). On-device model remains the exported DecisionTree on raw window features."
+  },
+  "lda": {
+    "binary_top_coefficients": [
+      {
+        "feature": "deauth_packets",
+        "coef": 0.49663620756331345
+      },
+      {
+        "feature": "snr_mean",
+        "coef": 0.3523590427750029
+      },
+      {
+        "feature": "heap",
+        "coef": -0.2805060988419051
+      },
+      {
+        "feature": "seq_jump",
+        "coef": -0.06600587467655536
+      },
+      {
+        "feature": "rssi_mean",
+        "coef": -0.05463964017769568
+      },
+      {
+        "feature": "beacon_packets",
+        "coef": -0.05241411035994374
+      },
+      {
+        "feature": "deauth_targeted",
+        "coef": 0.05083951073353025
+      },
+      {
+        "feature": "total_packets",
+        "coef": 0.03500546497922677
+      }
+    ],
+    "heap_coefficient": -0.2805060988419051,
+    "train_accuracy": 0.6347240330291177,
+    "multiclass": {
+      "classes": [
+        "ARP_SPOOF",
+        "DEAUTH",
+        "NONE",
+        "SYN_FLOOD"
+      ],
+      "n_components": 2,
+      "explained_variance_ratio": [
+        0.8475094882624492,
+        0.11784452373453382
+      ]
+    },
+    "note": "LDA is offline supervised projection. On-device model remains the exported DecisionTree."
+  },
+  "hyperparameters": {
+    "best_params": {
+      "class_weight": "balanced",
+      "max_depth": 8,
+      "min_samples_leaf": 20
+    },
+    "best_cv_f1": 0.8019965007890183,
+    "best_test_f1": 0.778119237861094,
+    "default_max_depth4_test_f1": 0.7455357142857143,
+    "top_configs": [
+      {
+        "max_depth": 8,
+        "min_samples_leaf": 20,
+        "mean_cv_f1": 0.8019965007890183,
+        "std_cv_f1": 0.008548224007751298
+      },
+      {
+        "max_depth": 8,
+        "min_samples_leaf": 10,
+        "mean_cv_f1": 0.7985919144923287,
+        "std_cv_f1": 0.006764927680069938
+      },
+      {
+        "max_depth": 8,
+        "min_samples_leaf": 1,
+        "mean_cv_f1": 0.797918129510478,
+        "std_cv_f1": 0.007916032938533183
+      },
+      {
+        "max_depth": 8,
+        "min_samples_leaf": 5,
+        "mean_cv_f1": 0.794087731464643,
+        "std_cv_f1": 0.01062937251879618
+      },
+      {
+        "max_depth": 6,
+        "min_samples_leaf": 20,
+        "mean_cv_f1": 0.787480230576266,
+        "std_cv_f1": 0.011772111471695738
+      },
+      {
+        "max_depth": 6,
+        "min_samples_leaf": 1,
+        "mean_cv_f1": 0.7850715173714513,
+        "std_cv_f1": 0.007830541004638905
+      },
+      {
+        "max_depth": 6,
+        "min_samples_leaf": 5,
+        "mean_cv_f1": 0.7847176702967228,
+        "std_cv_f1": 0.00908289750299744
+      },
+      {
+        "max_depth": 6,
+        "min_samples_leaf": 10,
+        "mean_cv_f1": 0.7840030060942959,
+        "std_cv_f1": 0.0027995126527790245
+      },
+      {
+        "max_depth": 5,
+        "min_samples_leaf": 20,
+        "mean_cv_f1": 0.7817823580510148,
+        "std_cv_f1": 0.010143758307153326
+      },
+      {
+        "max_depth": 5,
+        "min_samples_leaf": 10,
+        "mean_cv_f1": 0.7765195371995018,
+        "std_cv_f1": 0.004676158272485879
+      }
+    ],
+    "export_policy": "MCU export keeps max_depth=4 (shallow); grid is for report only."
+  }
 }

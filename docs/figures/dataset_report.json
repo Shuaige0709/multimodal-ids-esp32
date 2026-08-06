@@ -1,0 +1,180 @@
+{
+  "dataset": "nids_windows_20260805_003226.csv",
+  "n_windows": 6575,
+  "n_normal": 3746,
+  "n_attack": 2829,
+  "attack_fraction": 0.4302661596958175,
+  "attack_type_counts": {
+    "NONE": 3746,
+    "DEAUTH": 1472,
+    "SYN_FLOOD": 645,
+    "ARP_SPOOF": 712
+  },
+  "time_range": {
+    "start": "2026-08-05 00:32:26.200000",
+    "end": "2026-08-05 00:54:02.900000"
+  },
+  "feature_stats": {
+    "total_packets": {
+      "mean": 1.0406083650190114,
+      "std": 0.23406227493078605,
+      "min": 1.0,
+      "p50": 1.0,
+      "max": 6.0,
+      "frac_zero": 0.0
+    },
+    "packet_density": {
+      "mean": 10.406083650190114,
+      "std": 2.3406227493078604,
+      "min": 10.0,
+      "p50": 10.0,
+      "max": 60.0,
+      "frac_zero": 0.0
+    },
+    "beacon_packets": {
+      "mean": 0.19741444866920152,
+      "std": 0.3984599279873051,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 2.0,
+      "frac_zero": 0.8027376425855514
+    },
+    "deauth_packets": {
+      "mean": 0.0714828897338403,
+      "std": 0.264063816323121,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 2.0,
+      "frac_zero": 0.9301901140684411
+    },
+    "deauth_targeted": {
+      "mean": 0.02600760456273764,
+      "std": 0.15916991646998416,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 1.0,
+      "frac_zero": 0.9739923954372623
+    },
+    "probe_packets": {
+      "mean": 0.09064638783269963,
+      "std": 0.2881850386419563,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 2.0,
+      "frac_zero": 0.9096577946768061
+    },
+    "auth_packets": {
+      "mean": 0.003041825095057034,
+      "std": 0.05507298514742232,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 1.0,
+      "frac_zero": 0.996958174904943
+    },
+    "seq_jump": {
+      "mean": 0.7826615969581749,
+      "std": 0.46776586177057916,
+      "min": 0.0,
+      "p50": 1.0,
+      "max": 3.0,
+      "frac_zero": 0.24136882129277568
+    },
+    "rssi_mean": {
+      "mean": -69.76920152091255,
+      "std": 18.380456636067407,
+      "min": -98.0,
+      "p50": -70.0,
+      "max": 0.0,
+      "frac_zero": 0.020836501901140683
+    },
+    "rssi_var": {
+      "mean": 7.330033798056611,
+      "std": 108.11473672676193,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 2652.25,
+      "frac_zero": 0.9703422053231939
+    },
+    "snr_mean": {
+      "mean": 20.447072243346007,
+      "std": 15.716061162982987,
+      "min": -9.0,
+      "p50": 22.0,
+      "max": 56.0,
+      "frac_zero": 0.0488212927756654
+    },
+    "heap": {
+      "mean": 68005.1485931559,
+      "std": 1954.449901864034,
+      "min": 62352.0,
+      "p50": 69404.0,
+      "max": 69864.0,
+      "frac_zero": 0.0
+    },
+    "minheap": {
+      "mean": 44280.0,
+      "std": 0.0,
+      "min": 44280.0,
+      "p50": 44280.0,
+      "max": 44280.0,
+      "frac_zero": 0.0
+    },
+    "reconn": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0,
+      "frac_zero": 1.0
+    },
+    "qpeak": {
+      "mean": 100.0,
+      "std": 0.0,
+      "min": 100.0,
+      "p50": 100.0,
+      "max": 100.0,
+      "frac_zero": 0.0
+    },
+    "udpfail": {
+      "mean": 19.0,
+      "std": 0.0,
+      "min": 19.0,
+      "p50": 19.0,
+      "max": 19.0,
+      "frac_zero": 0.0
+    },
+    "backlog": {
+      "mean": 0.0,
+      "std": 0.0,
+      "min": 0.0,
+      "p50": 0.0,
+      "max": 0.0,
+      "frac_zero": 1.0
+    }
+  },
+  "packet_density_nunique": 4,
+  "total_packets_mode": 1,
+  "warnings": [
+    "packet_density nearly constant (syslog thinning) - see density contract note",
+    "minheap has ~zero variance in this capture"
+  ],
+  "feature_order": [
+    "total_packets",
+    "packet_density",
+    "beacon_packets",
+    "deauth_packets",
+    "deauth_targeted",
+    "probe_packets",
+    "auth_packets",
+    "seq_jump",
+    "rssi_mean",
+    "rssi_var",
+    "snr_mean",
+    "heap",
+    "minheap",
+    "reconn",
+    "qpeak",
+    "udpfail",
+    "backlog"
+  ]
+}

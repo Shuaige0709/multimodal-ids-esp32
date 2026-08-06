@@ -1,0 +1,49 @@
+{
+  "model": "PhaseA DT max_depth=4 balanced rs=42 fit on 70% train of 20260805_003226",
+  "phase_a_holdout_f1": 0.743078626799557,
+  "segments": [
+    {
+      "capture": "weak_syn_001958",
+      "segment": "IDLE_pre",
+      "n": 321,
+      "pred_attack_rate": 0.4672897196261682,
+      "heap_median": 69808.0
+    },
+    {
+      "capture": "weak_syn_001958",
+      "segment": "SYN_weak",
+      "n": 320,
+      "pred_attack_rate": 0.953125,
+      "heap_median": 68124.0
+    },
+    {
+      "capture": "weak_syn_001958",
+      "segment": "IDLE_post",
+      "n": 283,
+      "pred_attack_rate": 0.43109540636042404,
+      "heap_median": 69828.0
+    },
+    {
+      "capture": "strong_syn_004323",
+      "segment": "IDLE_pre",
+      "n": 288,
+      "pred_attack_rate": 0.2534722222222222,
+      "heap_median": 69828.0
+    },
+    {
+      "capture": "strong_syn_004323",
+      "segment": "SYN_strong",
+      "n": 321,
+      "pred_attack_rate": 0.9844236760124611,
+      "heap_median": 68136.0
+    },
+    {
+      "capture": "strong_syn_004323",
+      "segment": "IDLE_post",
+      "n": 317,
+      "pred_attack_rate": 0.5457413249211357,
+      "heap_median": 69828.0
+    }
+  ],
+  "interpretation": "All benign windows have label=0; pred_attack_rate is false-positive rate under unlabeled SYN load."
+}
