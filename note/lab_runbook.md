@@ -134,21 +134,6 @@ sudo -E ./host/attacks/prepare_wifi.sh monitor
 sudo -E ./host/attacks/attack_deauth.sh
 ```
 
-#### Mode P 常見網路落差（Kali 到不了 Pi eth0）
-
-若 Pi 的 label／SSH 在 **有線 `10.0.0.x`**（接 Windows），而 Kali `eth0` 是 **VMnet1 `192.168.124.x`**，兩者**不是同一 L2**：
-
-- Windows 能 ping Pi、Kali 不能 → 正常，除非 Windows **IP forwarding** 開著，且：
-  - Kali：`ip route` 有 `10.0.0.0/24 via 192.168.124.1`
-  - Pi：回程有 `192.168.124.0/24 via <Windows 在 Pi 那段的 IP>`
-- `prepare_wifi` 會 flush Kali eth0；新版會自動加回 `via 192.168.124.1` 的路由。若 ping 仍失敗，手動：
-  `sudo ip route replace 10.0.0.0/24 via 192.168.124.1`
-- **不要**在 Kali eth0 上設成與 Pi 同網段的假地址（例如 `10.0.0.50`）——會變成 on-link ARP、更不通。
-
-細節因人而異；個人備忘可寫死自己的 IP（`note/private/`）。
-
-（個人一鍵腳本可放各人本機／`note/private/`，不必進 Git。）
-
 ### Kali：SSH 還是視窗？
 
 - 第一次接網卡／切 monitor：VMware **直接開**
