@@ -196,9 +196,11 @@ git pull
 chmod +x host/attacks/*.sh scripts/*.sh   # clone / pull 後做一次（否則 ./xxx.sh → command not found）
 
 # 需有 NIDS_ESP32_MAC（live_state 或手貼 print_live_targets 的 export）後：
-sudo ./host/attacks/attack_deauth.sh
-sudo ./host/attacks/syn_flood.sh
-sudo ./host/attacks/arpspoof.sh
+# deauth：自動短 airodump + 攻擊前 ping label_host（W/S→Windows；P→Pi）
+# syn/arp：同樣先檢查 label 通路；一律建議 sudo -E
+sudo -E ./host/attacks/attack_deauth.sh
+sudo -E ./host/attacks/syn_flood.sh
+sudo -E ./host/attacks/arpspoof.sh
 ```
 
 ### 收完資料後（Windows）

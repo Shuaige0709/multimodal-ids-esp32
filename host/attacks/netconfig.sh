@@ -85,6 +85,84 @@ get_gateway_ip() {
   echo "${ip%.*}.1"
 }
 
+# Short airodump on monitor iface → print "BSSID CHANNEL" for SSID.
+# Phone hotspots rotate BSSID; live_state is often stale — prefer this for deauth.
+airodump_find_ap() {
+  local mon="${1:-$MON_IFACE}"
+  local essid="${2:-$SSID}"
+  local sec="${NIDS_AIRODUMP_SEC:-10}"
+  local tmpdir csv bssid ch
+
+  if ! command -v airodump-ng >/dev/null 2>&1; then
+    echo "[netconfig] airodump-ng not found" >&2
+    return 1
+  fi
+  if ! ip link show "$mon" >/dev/null 2>&1; then
+    echo "[netconfig] monitor iface '$mon' missing for airodump" >&2
+    return 1
+  fi
+
+  tmpdir="$(mktemp -d)"
+  echo "[netconfig] airodump ${sec}s on ${mon} for ESSID '${essid}' ..." >&2
+  # timeout may return 124; CSV may still be written
+  timeout "$sec" airodump-ng --essid "$essid" -w "${tmpdir}/scan" --output-format csv \
+    "$mon" >/dev/null 2>&1 || true
+
+  csv="$(ls -1 "${tmpdir}"/scan-*.csv 2>/dev/null | head -n1 || true)"
+  if [[ -z "${csv:-}" || ! -s "$csv" ]]; then
+    echo "[netconfig] airodump produced no CSV (AP quiet / wrong iface?)" >&2
+    rm -rf "$tmpdir"
+    return 1
+  fi
+
+  # airodump CSV: AP section first; fields: BSSID,..., channel, ..., ESSID
+  local pair
+  set +e
+  pair="$(python3 - "$csv" "$essid" <<'PY'
+import csv, sys
+path, essid = sys.argv[1], sys.argv[2]
+best = None  # (power, bssid, channel) — power is negative dBm; pick strongest
+with open(path, newline="", encoding="utf-8", errors="replace") as fh:
+    rows = csv.reader(fh)
+    for row in rows:
+        if not row:
+            break  # end of AP section
+        if row[0].strip() == "BSSID":
+            continue
+        if len(row) < 14:
+            continue
+        bssid = row[0].strip()
+        try:
+            ch = int(str(row[3]).strip())
+        except ValueError:
+            continue
+        ess = row[13].strip()
+        if ess != essid:
+            continue
+        try:
+            pwr = int(str(row[8]).strip())
+        except ValueError:
+            pwr = -999
+        if best is None or pwr > best[0]:
+            best = (pwr, bssid, ch)
+if not best:
+    sys.exit(1)
+print(best[1], best[2])
+PY
+)"
+  local py_rc=$?
+  set -e
+  rm -rf "$tmpdir"
+  if [[ "$py_rc" -ne 0 || -z "${pair:-}" ]]; then
+    echo "[netconfig] ESSID '${essid}' not seen in airodump window" >&2
+    return 1
+  fi
+  bssid="${pair%% *}"
+  ch="${pair##* }"
+  echo "[netconfig] airodump match: BSSID=${bssid} channel=${ch}" >&2
+  echo "${bssid} ${ch}"
+}
+
 resolve_bssid() {
   if [[ -n "${NIDS_BSSID:-}" ]]; then
     echo "$NIDS_BSSID"
@@ -120,6 +198,49 @@ resolve_bssid() {
     return 1
   fi
   echo "$bssid"
+}
+
+# Ping label host; Mode P: try restoring 10.0.0.0/24 via Windows if needed.
+# UDP labels have no ACK — this only proves L3 reachability, not that collector printed START.
+ensure_label_path() {
+  local host iface gw
+  host="$(get_label_host)"
+  iface="${NIDS_HOSTONLY_IFACE:-eth0}"
+  gw="${NIDS_WIN_GATEWAY:-192.168.124.1}"
+
+  if [[ -z "$host" ]]; then
+    echo "[netconfig] ERROR: empty label host — export NIDS_LABEL_HOST=10.0.0.2" >&2
+    return 1
+  fi
+
+  if ping -c 1 -W 1 "$host" >/dev/null 2>&1; then
+    echo "[netconfig] label host reachable: ${host}:${LABEL_PORT} (ICMP OK; watch collector for START/STOP)"
+    return 0
+  fi
+
+  echo "[netconfig] WARN: cannot ping ${host} — trying Mode P host-only route via ${gw}" >&2
+  if [[ "$host" == 10.0.0.* ]] && ip link show "$iface" >/dev/null 2>&1; then
+    # prepare_wifi monitor flushes eth0; re-add addr+route best-effort
+    if ! ip -4 addr show dev "$iface" | grep -q 'inet '; then
+      ip addr add "${NIDS_HOSTONLY_IP:-192.168.124.50/24}" dev "$iface" 2>/dev/null || true
+      ip link set "$iface" up 2>/dev/null || true
+    fi
+    ip route replace 10.0.0.0/24 via "$gw" dev "$iface" 2>/dev/null \
+      && echo "[netconfig] installed route 10.0.0.0/24 via ${gw} dev ${iface}" >&2 \
+      || true
+  fi
+
+  if ping -c 2 -W 1 "$host" >/dev/null 2>&1; then
+    echo "[netconfig] label host reachable after route fix: ${host}:${LABEL_PORT}"
+    return 0
+  fi
+
+  echo "[netconfig] ERROR: label host ${host} unreachable from Kali." >&2
+  echo "[netconfig]   Collector must listen on that IP:9999 (Mode P → Pi eth0)." >&2
+  echo "[netconfig]   Fix: nids-sync / export NIDS_LABEL_HOST=10.0.0.2" >&2
+  echo "[netconfig]   Fix: sudo ip route replace 10.0.0.0/24 via ${gw} dev ${iface}" >&2
+  echo "[netconfig]   Fix: ping ${host} from Kali before attacking." >&2
+  return 1
 }
 
 send_label() {

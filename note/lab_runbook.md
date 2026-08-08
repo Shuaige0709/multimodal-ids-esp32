@@ -88,11 +88,10 @@ chmod +x host/attacks/*.sh scripts/*.sh
 ⑤ 先收 2–5 分鐘 NORMAL
 ⑥ Deauth：
      sudo -E ./host/attacks/prepare_wifi.sh monitor
-     # 手機熱點：先 airodump 對 BSSID + CH，再 export
-     #   sudo airodump-ng wlan0mon --essid <SSID>
-     #   export NIDS_BSSID=… NIDS_WIFI_CHANNEL=…
+     # 腳本會：ping label host（不通則試補 Mode P 路由）、短 airodump 刷新 BSSID/CH
+     # 可選強制：export NIDS_BSSID=… NIDS_WIFI_CHANNEL=…
      sudo -E ./host/attacks/attack_deauth.sh
-     → 等 ESP32 重連、collector 又穩定
+     → collector 要有 START/STOP；等 ESP32 重連、syslog 又穩定
 ⑦ 再收 1–2 分鐘 NORMAL
 ⑧ SYN：
      sudo -E ./host/attacks/prepare_wifi.sh managed
@@ -184,12 +183,13 @@ chmod +x host/attacks/*.sh scripts/*.sh   # clone / pull 後做一次
 
 # --- Deauth ---
 sudo -E ./host/attacks/prepare_wifi.sh monitor
-# 建議：airodump 確認 BSSID + channel 後再打
+# auto: label-host ping + short airodump（約 10s）→ BSSID/CH；失敗會送 STOP
 sudo -E ./host/attacks/attack_deauth.sh
 
 # --- SYN / ARP ---
 sudo -E ./host/attacks/prepare_wifi.sh managed
 # 確認 wlan 已連熱點（腳本會 best-effort nmcli；失敗就手動連）
+# syn/arp 同樣會先 ping label host（不通則拒打）
 sudo -E ./host/attacks/syn_flood.sh
 sudo -E ./host/attacks/arpspoof.sh
 ```
@@ -197,9 +197,12 @@ sudo -E ./host/attacks/arpspoof.sh
 同一時間 **只跑一支** 攻擊腳本。
 
 `prepare_wifi.sh`：開 `wlan0mon`、設 channel、把 host-only 設成 VMnet1 位址（預設 `192.168.124.50/24`），並在 Mode P 常見拓撲下補 `10.0.0.0/24 via 192.168.124.1`。  
+`attack_deauth.sh`：攻擊前檢查 label host 可 ping；預設短 airodump 刷新 BSSID／channel；失敗會送 STOP。  
 若你的 VMware 是別的子網（例如舊的 `.220.x`），設 `NIDS_HOSTONLY_IP=...`；介面名不同則 `NIDS_HOSTONLY_IFACE=...`。
 
-`attack_deauth.sh`：開打前會設 `NIDS_WIFI_CHANNEL`（或 live_state）。手機熱點常換頻道 → **以 airodump 為準**，`No such BSSID` 幾乎都是 CH／BSSID 過期。
+手機熱點常換 BSSID／頻道 → 腳本預設以 **當場 airodump** 為準（不必再手 export）。  
+仍失敗時可手動：`sudo airodump-ng wlan0mon --essid <SSID>` 後 `export NIDS_BSSID=… NIDS_WIFI_CHANNEL=…`。  
+Label 目標看 `live_state.label_host`：**Mode W／S** 常為 Windows `192.168.124.1`；**Mode P** 常為 Pi `10.0.0.2`（自動補 `10.0.0.0/24` 路由僅在 label host 為 `10.0.0.*` 時觸發）。
 
 ---
 
@@ -257,6 +260,7 @@ idf.py flash          →  板上用新模型
 - 板上舊模型可能一直 `[INFERENCE] attack`：收資料時保持 `HIPS_ENABLE 0`；重訓後再開
 - Syslog 若約 `255B` 且 parse 失敗：韌體 buffer 過舊，需 flash 含較大 syslog buffer 的版本
 - Kali 印 `ATTACK FINISHED` 但 collector 沒有 `ATTACK STOP`：先確認 label IP／路由；SYN 高流量時請用新版 collector（會穿插讀 `:9999`）
-- Deauth `No such BSSID`：airodump 對 BSSID+channel，勿只信過期的 `live_state`
+- Deauth `No such BSSID`：新腳本會自動重掃；仍失敗再手 export。勿只信過期 `live_state.ap_bssid`
+- 攻擊前 `label host unreachable`：Mode P 查到 Pi 路由；Mode W／S 查 VMnet1 上的 Windows 是否開著 collector
 - `prepare_wifi managed` 後連不上熱點：`nmcli device wifi connect <SSID> ifname wlan0`
 - USB Wi-Fi 在 VM 裡不見 `wlan0`：VMware Removable Devices → Connect

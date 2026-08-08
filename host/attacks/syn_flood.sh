@@ -19,6 +19,7 @@ fi
 echo ">>> Target ESP32 IP : ${TARGET_IP}:${TARGET_PORT}"
 echo ">>> Out interface   : $WIFI_IFACE"
 echo ">>> Label host      : $(get_label_host):${LABEL_PORT}"
+ensure_label_path || exit 1
 echo ">>> READY FOR SYN FLOOD"
 
 send_label START SYN_FLOOD
