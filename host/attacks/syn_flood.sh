@@ -20,6 +20,12 @@ echo ">>> Target ESP32 IP : ${TARGET_IP}:${TARGET_PORT}"
 echo ">>> Out interface   : $WIFI_IFACE"
 echo ">>> Label host      : $(get_label_host):${LABEL_PORT}"
 ensure_label_path || exit 1
+ensure_wifi_associated "$WIFI_IFACE" "$SSID" || exit 1
+# Catch "ping works but via NAT/Windows" (ttl~128) after failed hotspot join
+if ! ping -c 1 -W 2 "$TARGET_IP" >/dev/null 2>&1; then
+  echo ">>> ERROR: cannot ping ${TARGET_IP} on ${WIFI_IFACE} — rejoin '${SSID}'" >&2
+  exit 1
+fi
 echo ">>> READY FOR SYN FLOOD"
 
 send_label START SYN_FLOOD

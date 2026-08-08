@@ -24,6 +24,7 @@ echo ">>> Enabling IP forwarding..."
 sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
 ensure_label_path || exit 1
+ensure_wifi_associated "$WIFI_IFACE" "$SSID" || exit 1
 echo ">>> READY FOR ARP SPOOF"
 send_label START ARP_SPOOF
 sleep 1

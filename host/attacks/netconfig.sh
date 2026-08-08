@@ -243,6 +243,44 @@ ensure_label_path() {
   return 1
 }
 
+# Refuse SYN/ARP if managed Wi-Fi is not associated to the lab SSID (common after deauth).
+ensure_wifi_associated() {
+  local iface="${1:-$WIFI_IFACE}"
+  local want="${2:-$SSID}"
+  local state conn dev
+
+  if ! ip link show "$iface" >/dev/null 2>&1; then
+    echo "[netconfig] ERROR: Wi-Fi iface '${iface}' missing — plug USB / prepare_wifi managed" >&2
+    return 1
+  fi
+
+  if command -v nmcli >/dev/null 2>&1; then
+    # DEVICE:STATE:CONNECTION
+    while IFS=: read -r dev state conn; do
+      if [[ "$dev" == "$iface" ]]; then
+        if [[ "$state" != "connected" ]]; then
+          echo "[netconfig] ERROR: ${iface} state=${state} (need connected to '${want}')" >&2
+          echo "[netconfig]   nmcli device wifi connect '${want}' ifname ${iface}" >&2
+          return 1
+        fi
+        if [[ -n "$want" && -n "$conn" && "$conn" != "$want" ]]; then
+          echo "[netconfig] WARN: ${iface} connected to '${conn}', expected SSID '${want}'" >&2
+        fi
+        echo "[netconfig] Wi-Fi OK: ${iface} connected (${conn:-unknown})"
+        return 0
+      fi
+    done < <(nmcli -t -f DEVICE,STATE,CONNECTION device status 2>/dev/null || true)
+  fi
+
+  # Fallback without nmcli: must have an IPv4 on the iface
+  if ip -4 addr show dev "$iface" 2>/dev/null | grep -q 'inet '; then
+    echo "[netconfig] Wi-Fi OK: ${iface} has IPv4 (nmcli unavailable)"
+    return 0
+  fi
+  echo "[netconfig] ERROR: ${iface} has no IPv4 — join hotspot '${want}' first" >&2
+  return 1
+}
+
 send_label() {
   # send_label START|STOP [attack_type]
   # Same approach as pre-refactor Python netconfig: socket.sendto, a few repeats.

