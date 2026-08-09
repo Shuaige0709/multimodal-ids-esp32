@@ -12,6 +12,8 @@ Usage:
   python host/train/analyze_and_train.py
   python host/train/analyze_and_train.py --dataset data/windows/nids_windows_....csv
   python host/train/analyze_and_train.py --export-variant no-heap   # heap-neutralized MCU export
+  python host/train/analyze_and_train.py --export-variant nids-only   # HIDS neutralized
+  python host/train/analyze_and_train.py --export-variant nids-counts # HIDS+RSSI/SNR neutralized
 
 PCA (offline analysis for advisor / report; not deployed on ESP32):
   runs automatically with plots -> docs/figures/pca_*.png
@@ -62,8 +64,10 @@ from host.train.nids_features import (  # noqa: E402
     LABEL_COL,
     MAX_HEAP_IMPORTANCE,
     NIDS_BASELINE_FEATURES,
+    NIDS_COUNTS_FEATURES,
     NIDS_ONLY_FEATURES,
     NO_HEAP_FEATURES,
+    RF_SOFT_FEATURES,
     RSSI_VALID_MAX,
     RSSI_VALID_MIN,
     WIDS_P0_FEATURES,
@@ -782,6 +786,83 @@ def _fit_exportable_no_heap(df, y, attack_types):
     return clf, r
 
 
+def _neutralize_feature_cols(X_tr, X_te, y_tr, names):
+    """Hold listed WINDOW_FEATURES columns at NORMAL-train median (copy arrays)."""
+    X_tr = X_tr.copy()
+    X_te = X_te.copy()
+    fills = {}
+    for name in names:
+        idx = WINDOW_FEATURES.index(name)
+        normal_vals = X_tr[y_tr == 0, idx]
+        fill = float(np.median(normal_vals)) if len(normal_vals) else 0.0
+        fills[name] = fill
+        X_tr[:, idx] = fill
+        X_te[:, idx] = fill
+    return X_tr, X_te, fills
+
+
+def _fit_exportable_nids_only(df, y, attack_types):
+    """
+    Train a DT on full WINDOW_FEATURES with every HIDS column held at the
+    NORMAL-train median. Firmware/model.h layout unchanged; tree can only
+    usefully split on wireless features (matched-load antidote when udpfail
+    / heap dominate the full multimodal shallow DT).
+    """
+    X = df[WINDOW_FEATURES].to_numpy(dtype=float)
+    X_tr, X_te, y_tr, y_te, at_tr, at_te = train_test_split(
+        X, y, attack_types, test_size=0.3, random_state=42, stratify=y
+    )
+    X_tr, X_te, fills = _neutralize_feature_cols(X_tr, X_te, y_tr, HIDS_FEATURES)
+    clf = DecisionTreeClassifier(max_depth=4, class_weight="balanced", random_state=42)
+    clf.fit(X_tr, y_tr)
+    r = evaluate("DT exportable (NIDS-only / HIDS neutralized)", clf, X_te, y_te, at_te)
+    r["hids_fill_values"] = fills
+    r["heap_importance"] = _heap_importance(clf, WINDOW_FEATURES)
+    r["hids_importance_sum"] = float(
+        sum(
+            float(imp)
+            for fname, imp in zip(WINDOW_FEATURES, clf.feature_importances_)
+            if fname in HIDS_FEATURES
+        )
+    ) if hasattr(clf, "feature_importances_") else 0.0
+    return clf, r
+
+
+def _fit_exportable_nids_counts(df, y, attack_types):
+    """
+    Like nids-only, but also neutralize rssi_mean/rssi_var/snr_mean.
+    Forces splits onto deauth / density / packet counts — more stable across
+    RF environments than a shallow tree on RSSI variance.
+    """
+    X = df[WINDOW_FEATURES].to_numpy(dtype=float)
+    X_tr, X_te, y_tr, y_te, at_tr, at_te = train_test_split(
+        X, y, attack_types, test_size=0.3, random_state=42, stratify=y
+    )
+    ban = list(HIDS_FEATURES) + list(RF_SOFT_FEATURES)
+    X_tr, X_te, fills = _neutralize_feature_cols(X_tr, X_te, y_tr, ban)
+    clf = DecisionTreeClassifier(max_depth=4, class_weight="balanced", random_state=42)
+    clf.fit(X_tr, y_tr)
+    r = evaluate("DT exportable (NIDS-counts / HIDS+RF soft neutralized)", clf, X_te, y_te, at_te)
+    r["neutralized_fill_values"] = fills
+    r["heap_importance"] = _heap_importance(clf, WINDOW_FEATURES)
+    r["hids_importance_sum"] = float(
+        sum(
+            float(imp)
+            for fname, imp in zip(WINDOW_FEATURES, clf.feature_importances_)
+            if fname in HIDS_FEATURES
+        )
+    ) if hasattr(clf, "feature_importances_") else 0.0
+    r["rf_soft_importance_sum"] = float(
+        sum(
+            float(imp)
+            for fname, imp in zip(WINDOW_FEATURES, clf.feature_importances_)
+            if fname in RF_SOFT_FEATURES
+        )
+    ) if hasattr(clf, "feature_importances_") else 0.0
+    r["counts_features"] = NIDS_COUNTS_FEATURES
+    return clf, r
+
+
 def plot_telemetry(df, path_prefix):
     """Optional time-series plots when window_start is available."""
     if "window_start" not in df.columns:
@@ -961,9 +1042,13 @@ def main():
                     help="Refuse to write model.h if heap dominates feature importance")
     ap.add_argument(
         "--export-variant",
-        choices=("full", "no-heap"),
+        choices=("full", "no-heap", "nids-only", "nids-counts"),
         default="full",
-        help="full=default multimodal DT; no-heap=heap-neutralized DT (same model.h layout)",
+        help=(
+            "full=default multimodal DT; no-heap=heap-neutralized; "
+            "nids-only=HIDS neutralized; "
+            "nids-counts=HIDS+RSSI/SNR neutralized (deauth/density tree)"
+        ),
     )
     args = ap.parse_args()
 
@@ -1053,10 +1138,34 @@ def main():
         f"  heap fill (NORMAL train median)={abl_export_nh['heap_fill_value']:.1f}  "
         f"heap_importance={abl_export_nh['heap_importance']:.4f}"
     )
+    nids_export_clf, abl_export_nids = _fit_exportable_nids_only(df, y, attack_types)
+    print_result(abl_export_nids)
+    print(
+        f"  HIDS fill medians={abl_export_nids['hids_fill_values']}  "
+        f"heap_imp={abl_export_nids['heap_importance']:.4f}  "
+        f"hids_imp_sum={abl_export_nids['hids_importance_sum']:.4f}"
+    )
+    nids_counts_clf, abl_export_counts = _fit_exportable_nids_counts(df, y, attack_types)
+    print_result(abl_export_counts)
+    print(
+        f"  neutralized={list(abl_export_counts['neutralized_fill_values'])}  "
+        f"rf_soft_imp={abl_export_counts['rf_soft_importance_sum']:.4f}  "
+        f"hids_imp_sum={abl_export_counts['hids_importance_sum']:.4f}"
+    )
     print(
         f"\nHeap drop cost (full - no-heap col) F1 = "
         f"{dt_full['f1'] - abl_no_heap['f1']:+.4f}  "
         f"FPR {dt_full['fpr']:.3f} -> {abl_no_heap['fpr']:.3f}"
+    )
+    print(
+        f"NIDS-only export vs full F1 = "
+        f"{abl_export_nids['f1'] - dt_full['f1']:+.4f}  "
+        f"FPR {dt_full['fpr']:.3f} -> {abl_export_nids['fpr']:.3f}"
+    )
+    print(
+        f"NIDS-counts export vs full F1 = "
+        f"{abl_export_counts['f1'] - dt_full['f1']:+.4f}  "
+        f"FPR {dt_full['fpr']:.3f} -> {abl_export_counts['fpr']:.3f}"
     )
 
     # Forced wireless importances (NIDS-only tree; RF cleaned at load)
@@ -1085,6 +1194,20 @@ def main():
         export_clf = noheap_clf
         export_name = f"{export_name}+no-heap"
         print("\nExport variant: no-heap (heap neutralized, firmware feature order unchanged)")
+    elif args.export_variant == "nids-only":
+        export_clf = nids_export_clf
+        export_name = f"{export_name}+nids-only"
+        print(
+            "\nExport variant: nids-only "
+            "(all HIDS neutralized, firmware feature order unchanged)"
+        )
+    elif args.export_variant == "nids-counts":
+        export_clf = nids_counts_clf
+        export_name = f"{export_name}+nids-counts"
+        print(
+            "\nExport variant: nids-counts "
+            "(HIDS + RSSI/SNR neutralized; deauth/density/count tree)"
+        )
     else:
         if export_name not in fitted:
             raise SystemExit(f"--export-model {export_name} not among {list(fitted)}")
@@ -1160,7 +1283,9 @@ def main():
                 ("No-heap col", abl_no_heap["f1"], abl_no_heap["fpr"]),
                 ("HIDS\\heap+W", abl_hids_wo_heap["f1"], abl_hids_wo_heap["fpr"]),
                 ("Export no-heap", abl_export_nh["f1"], abl_export_nh["fpr"]),
-                ("NIDS-only", abl_nids["f1"], abl_nids["fpr"]),
+                ("Export NIDS-only", abl_export_nids["f1"], abl_export_nids["fpr"]),
+                ("Export counts", abl_export_counts["f1"], abl_export_counts["fpr"]),
+                ("NIDS-only drop", abl_nids["f1"], abl_nids["fpr"]),
             ],
             os.path.join(OUTPUT_DIR, "ablation_heap.png"),
         )
@@ -1210,6 +1335,19 @@ def main():
             "exportable_no_heap_f1": abl_export_nh["f1"],
             "exportable_no_heap_fpr": abl_export_nh["fpr"],
             "exportable_no_heap_heap_importance": abl_export_nh["heap_importance"],
+            "exportable_nids_only_f1": abl_export_nids["f1"],
+            "exportable_nids_only_fpr": abl_export_nids["fpr"],
+            "exportable_nids_only_heap_importance": abl_export_nids["heap_importance"],
+            "exportable_nids_only_hids_importance_sum": abl_export_nids[
+                "hids_importance_sum"
+            ],
+            "exportable_nids_only_hids_fill": abl_export_nids["hids_fill_values"],
+            "exportable_nids_counts_f1": abl_export_counts["f1"],
+            "exportable_nids_counts_fpr": abl_export_counts["fpr"],
+            "exportable_nids_counts_rf_soft_importance_sum": abl_export_counts[
+                "rf_soft_importance_sum"
+            ],
+            "exportable_nids_counts_features": NIDS_COUNTS_FEATURES,
             "heap_drop_f1_cost": dt_full["f1"] - abl_no_heap["f1"],
             "no_heap_features": NO_HEAP_FEATURES,
             "hids_no_heap_features": HIDS_NO_HEAP_FEATURES,

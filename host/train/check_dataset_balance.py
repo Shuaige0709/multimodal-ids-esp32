@@ -6,6 +6,7 @@ Usage:
   python host/train/check_dataset_balance.py
   python host/train/check_dataset_balance.py data/windows/nids_windows_....csv
   python host/train/check_dataset_balance.py --strict   # exit 1 if gates fail
+  python host/train/check_dataset_balance.py --with-auth --strict   # + AUTH_FLOOD
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from host.train.nids_features import (  # noqa: E402
     LABEL_COL,
     MIN_NORMAL_WINDOWS,
     MIN_WINDOWS_PER_ATTACK,
+    PHASE_C_ATTACK_TYPES,
     REQUIRED_ATTACK_TYPES,
 )
 
@@ -43,6 +45,11 @@ def main():
     ap.add_argument("dataset", nargs="?", default=None)
     ap.add_argument("--strict", action="store_true",
                     help="Exit non-zero if Phase A gates fail")
+    ap.add_argument(
+        "--with-auth",
+        action="store_true",
+        help="Also require AUTH_FLOOD windows (Phase C)",
+    )
     ap.add_argument("--min-normal", type=int, default=MIN_NORMAL_WINDOWS)
     ap.add_argument("--min-per-attack", type=int, default=MIN_WINDOWS_PER_ATTACK)
     args = ap.parse_args()
@@ -78,7 +85,10 @@ def main():
 
     gate("normal_count", n_normal >= args.min_normal,
          f"normal={n_normal} (need >={args.min_normal})")
-    for t in REQUIRED_ATTACK_TYPES:
+    required = list(REQUIRED_ATTACK_TYPES)
+    if args.with_auth:
+        required.extend(PHASE_C_ATTACK_TYPES)
+    for t in required:
         c = int(atk.get(t, 0))
         gate(f"attack_{t}", c >= args.min_per_attack,
              f"{t}={c} (need >={args.min_per_attack})")

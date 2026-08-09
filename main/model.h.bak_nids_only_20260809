@@ -5,7 +5,7 @@
  * Feature order MUST match nids_features.WINDOW_FEATURES / firmware fill order.
  * DO NOT edit by hand — regenerate with: python analyze_and_train.py
  *
- * Generated: 2026-08-09T15:05:44
+ * Generated: 2026-08-09T02:53:16
  */
 #ifndef NIDS_MODEL_H
 #define NIDS_MODEL_H
@@ -61,60 +61,56 @@ static inline int nids_predict(const nids_window_features_t *f)
     /* --- m2cgen-generated tree --- */
 
     double var0[2];
-    if (input[3] <= 0.5) {
-        if (input[0] <= 249.5) {
-            if (input[0] <= 27.5) {
-                if (input[0] <= 6.5) {
-                    memcpy(var0, (double[]){0.5851499480832648, 0.41485005191673524}, 2 * sizeof(double));
+    if (input[9] <= 100.57986068725586) {
+        if (input[10] <= 32.35000038146973) {
+            if (input[9] <= 4.59375) {
+                if (input[8] <= -69.8125) {
+                    memcpy(var0, (double[]){0.5502150924574438, 0.4497849075425561}, 2 * sizeof(double));
                 } else {
-                    memcpy(var0, (double[]){0.5037664720061669, 0.4962335279938332}, 2 * sizeof(double));
+                    memcpy(var0, (double[]){0.8163650950464454, 0.18363490495355453}, 2 * sizeof(double));
                 }
             } else {
-                if (input[1] <= 2696.9000244140625) {
-                    memcpy(var0, (double[]){0.12816100396633834, 0.8718389960336617}, 2 * sizeof(double));
-                } else {
-                    memcpy(var0, (double[]){0.4836914414168635, 0.5163085585831364}, 2 * sizeof(double));
-                }
-            }
-        } else {
-            if (input[1] <= 4758.150146484375) {
-                if (input[1] <= 3646.550048828125) {
-                    memcpy(var0, (double[]){0.44633099661486786, 0.5536690033851321}, 2 * sizeof(double));
-                } else {
-                    memcpy(var0, (double[]){0.7025134264232005, 0.2974865735767995}, 2 * sizeof(double));
-                }
-            } else {
-                if (input[0] <= 477.5) {
-                    memcpy(var0, (double[]){0.8411311915659425, 0.15886880843405757}, 2 * sizeof(double));
-                } else {
-                    memcpy(var0, (double[]){0.9315065782965676, 0.06849342170343246}, 2 * sizeof(double));
-                }
-            }
-        }
-    } else {
-        if (input[1] <= 195.0) {
-            if (input[4] <= 0.5) {
-                if (input[7] <= 0.5) {
-                    memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
-                } else {
-                    memcpy(var0, (double[]){0.8198938716054521, 0.18010612839454798}, 2 * sizeof(double));
-                }
-            } else {
-                if (input[1] <= 175.5999984741211) {
-                    memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
+                if (input[0] <= 430.5) {
+                    memcpy(var0, (double[]){0.0793740330067045, 0.9206259669932956}, 2 * sizeof(double));
                 } else {
                     memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
                 }
             }
         } else {
-            if (input[0] <= 299.0) {
-                if (input[0] <= 4.5) {
-                    memcpy(var0, (double[]){0.018614759519984876, 0.9813852404800152}, 2 * sizeof(double));
+            if (input[3] <= 0.5) {
+                if (input[8] <= -52.06944465637207) {
+                    memcpy(var0, (double[]){0.21709633649932067, 0.7829036635006793}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                }
+            } else {
+                memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
+            }
+        }
+    } else {
+        if (input[1] <= 2665.050048828125) {
+            if (input[10] <= 36.64999961853027) {
+                memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
+            } else {
+                if (input[3] <= 0.5) {
+                    memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
                 } else {
                     memcpy(var0, (double[]){0.0, 1.0}, 2 * sizeof(double));
                 }
+            }
+        } else {
+            if (input[0] <= 225.0) {
+                if (input[8] <= -62.29999923706055) {
+                    memcpy(var0, (double[]){0.1594367109096795, 0.8405632890903205}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                }
             } else {
-                memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                if (input[8] <= -62.82575607299805) {
+                    memcpy(var0, (double[]){0.9508531841798925, 0.04914681582010742}, 2 * sizeof(double));
+                } else {
+                    memcpy(var0, (double[]){1.0, 0.0}, 2 * sizeof(double));
+                }
             }
         }
     }

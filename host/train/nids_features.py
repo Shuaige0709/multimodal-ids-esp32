@@ -43,6 +43,17 @@ NIDS_ONLY_FEATURES = [
     "rssi_mean", "rssi_var", "snr_mean",
 ]
 
+# Count / subtype wireless features only. RSSI/SNR often overfit one capture
+# environment and cause IDLE false alarms after flash (domain shift).
+NIDS_COUNTS_FEATURES = [
+    "total_packets", "packet_density",
+    "beacon_packets", "deauth_packets", "deauth_targeted",
+    "probe_packets", "auth_packets", "seq_jump",
+]
+
+# Soft RF stats neutralized together with HIDS for --export-variant nids-counts.
+RF_SOFT_FEATURES = ["rssi_mean", "rssi_var", "snr_mean"]
+
 # Baseline wireless features before P0 WIDS additions (for ±WIDS ablation).
 NIDS_BASELINE_FEATURES = [
     "total_packets", "packet_density",
@@ -68,6 +79,8 @@ WINDOW_START_COL = "window_start"
 
 # Phase A acceptance defaults (override via check_dataset_balance.py CLI).
 REQUIRED_ATTACK_TYPES = ("DEAUTH", "SYN_FLOOD", "ARP_SPOOF")
+# Phase C optional fourth type (enable via check_dataset_balance.py --with-auth).
+PHASE_C_ATTACK_TYPES = ("AUTH_FLOOD",)
 MIN_NORMAL_WINDOWS = 200
 MIN_WINDOWS_PER_ATTACK = 150
 MAX_HEAP_IMPORTANCE = 0.70  # export tree: heap must not dominate after rebalance
