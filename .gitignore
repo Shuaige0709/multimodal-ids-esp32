@@ -32,9 +32,11 @@ data/live_state.json.tmp
 # --- Datasets: ignore captures by default; whitelist locked baselines ---
 data/raw/*
 data/windows/*
+data/archive/
 !data/raw/.gitkeep
 !data/windows/.gitkeep
 !data/README.md
+!data/archive/README.md
 # Collector dumps outside data/ (and anything else named like this)
 nids_dataset_*.csv
 nids_windows_*.csv

@@ -46,3 +46,10 @@ aggregate via CSV row count and print a WARN (thinned syslog ≠ air).
 3. If a run becomes a **new locked baseline**, add an exception in `.gitignore` (same pattern as above) and commit those two CSVs + update this README.
 
 Do **not** commit trial dumps, failed sessions, or `live_state.json`.
+
+## Which local CSVs matter?
+
+Active set only in `raw/` + `windows/` (6 captures).  
+Everything else moved to `data/archive/` (see `data/archive/README.md`).  
+Personal index / plan: `note/private/README.md`.  
+Current training candidate (not Git-locked): `20260809_000851` (matched-load).

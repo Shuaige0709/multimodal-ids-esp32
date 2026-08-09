@@ -1,0 +1,49 @@
+{
+  "dataset": "nids_windows_20260809_000851.csv",
+  "first_attack": "2026-08-09 00:19:44.900000",
+  "busy_peak_center": "2026-08-09 00:16:42.600000",
+  "busy_proxy": "pre-attack NORMAL dens_roll(20) peak +/-90s (no wall-clock table)",
+  "busy_n": 1473,
+  "busy_density_median": 9946.8,
+  "busy_udpfail_median": 12992.0,
+  "segments": [
+    {
+      "segment": "all_NORMAL",
+      "full_attack_rate": 0.45138467758237316,
+      "nids_attack_rate": 0.06044067111380635,
+      "n": 4947
+    },
+    {
+      "segment": "pre_attack_NORMAL",
+      "full_attack_rate": 0.14181227143437627,
+      "nids_attack_rate": 0.08614384396586754,
+      "n": 2461
+    },
+    {
+      "segment": "pre_dens_p80",
+      "full_attack_rate": 0.06490872210953347,
+      "nids_attack_rate": 0.08924949290060852,
+      "n": 493
+    },
+    {
+      "segment": "pre_dens_p90",
+      "full_attack_rate": 0.06882591093117409,
+      "nids_attack_rate": 0.06477732793522267,
+      "n": 247
+    },
+    {
+      "segment": "BUSY_peak_pm90s",
+      "full_attack_rate": 0.10386965376782077,
+      "nids_attack_rate": 0.12287847929395791,
+      "n": 1473
+    },
+    {
+      "segment": "SYN_FLOOD",
+      "full_attack_rate": 0.9797979797979798,
+      "nids_attack_rate": 0.5191919191919192,
+      "n": 495
+    }
+  ],
+  "phase_a_benign_fp_ref": 0.98,
+  "note": "full export tree root-splits on udpfail; heap_imp~0.077"
+}

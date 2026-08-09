@@ -105,19 +105,6 @@
       "udpfail": 12996.0,
       "backlog": 0.0
     },
-    "exportable_nids_counts_f1": 0.5722222222222222,
-    "exportable_nids_counts_fpr": 0.061952861952861954,
-    "exportable_nids_counts_rf_soft_importance_sum": 0.0,
-    "exportable_nids_counts_features": [
-      "total_packets",
-      "packet_density",
-      "beacon_packets",
-      "deauth_packets",
-      "deauth_targeted",
-      "probe_packets",
-      "auth_packets",
-      "seq_jump"
-    ],
     "heap_drop_f1_cost": 0.0,
     "no_heap_features": [
       "total_packets",
@@ -165,8 +152,8 @@
     },
     "heap_importance": 0.0
   },
-  "exported_model": "DecisionTree+nids-counts",
-  "export_variant": "nids-counts",
+  "exported_model": "DecisionTree+nids-only",
+  "export_variant": "nids-only",
   "feature_order": [
     "total_packets",
     "packet_density",

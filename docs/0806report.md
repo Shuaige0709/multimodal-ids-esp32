@@ -34,13 +34,13 @@ style: |
 ---
 
 <!--
-Present: slides 1–8 (main). Rest = backup if asked.
-Export: npx @marp-team/marp-cli docs/phase_a_advisor_report.md -o docs/phase_a_advisor_report.pdf
+HISTORICAL (Phase A ask, 2026-08-06). Do not present for new meetings.
+Current deck: docs/0809report.md
 -->
 
 # ESP32 Lightweight Multimodal NIDS
 
-**2026.08.06**
+**2026.08.06** · superseded by **0809report**
 
 
 ---

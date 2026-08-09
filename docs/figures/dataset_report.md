@@ -1,43 +1,42 @@
 # Dataset content report
 
-- **File:** `nids_windows_20260805_003226.csv`
-- **Windows:** 6575 (NORMAL 3746 / ATTACK 2829, attack frac=0.430)
-- **Time range:** 2026-08-05 00:32:26.200000 → 2026-08-05 00:54:02.900000
+- **File:** `nids_windows_20260809_000851.csv`
+- **Windows:** 6354 (NORMAL 4947 / ATTACK 1407, attack frac=0.221)
+- **Time range:** 2026-08-09 00:08:52 → 2026-08-09 00:41:24
 
 ## Attack types
 
 | Type | Count |
 |------|------:|
-| NONE | 3746 |
-| DEAUTH | 1472 |
-| ARP_SPOOF | 712 |
-| SYN_FLOOD | 645 |
+| NONE | 4947 |
+| DEAUTH | 656 |
+| SYN_FLOOD | 495 |
+| ARP_SPOOF | 256 |
 
 ## Feature snapshot (median / std)
 
 | Feature | median | std | frac zero |
 |---------|-------:|----:|----------:|
-| `total_packets` | 1 | 0.2341 | 0.000 |
-| `packet_density` | 10 | 2.341 | 0.000 |
-| `beacon_packets` | 0 | 0.3985 | 0.803 |
-| `deauth_packets` | 0 | 0.2641 | 0.930 |
-| `deauth_targeted` | 0 | 0.1592 | 0.974 |
-| `probe_packets` | 0 | 0.2882 | 0.910 |
-| `auth_packets` | 0 | 0.05507 | 0.997 |
-| `seq_jump` | 1 | 0.4678 | 0.241 |
-| `rssi_mean` | -70 | 18.38 | 0.021 |
-| `rssi_var` | 0 | 108.1 | 0.970 |
-| `snr_mean` | 22 | 15.72 | 0.049 |
-| `heap` | 6.94e+04 | 1954 | 0.000 |
-| `minheap` | 4.428e+04 | 0 | 0.000 |
-| `reconn` | 0 | 0 | 1.000 |
+| `total_packets` | 16 | 199.5 | 0.000 |
+| `packet_density` | 605.2 | 6233 | 0.000 |
+| `beacon_packets` | 0 | 0.4744 | 0.658 |
+| `deauth_packets` | 0 | 0.2833 | 0.924 |
+| `deauth_targeted` | 0 | 0.1785 | 0.969 |
+| `probe_packets` | 0 | 0.268 | 0.922 |
+| `auth_packets` | 0 | 0.04853 | 0.998 |
+| `seq_jump` | 0 | 0.5394 | 0.513 |
+| `rssi_mean` | -69 | 18.59 | 0.000 |
+| `rssi_var` | 0 | 88.48 | 0.611 |
+| `snr_mean` | 26 | 18.75 | 0.011 |
+| `heap` | 6.527e+04 | 8551 | 0.000 |
+| `minheap` | 1080 | 0 | 0.000 |
+| `reconn` | 5097 | 0 | 0.000 |
 | `qpeak` | 100 | 0 | 0.000 |
-| `udpfail` | 19 | 0 | 0.000 |
+| `udpfail` | 1.3e+04 | 196.5 | 0.000 |
 | `backlog` | 0 | 0 | 1.000 |
 
 ## Warnings
 
-- packet_density nearly constant (syslog thinning) - see density contract note
 - minheap has ~zero variance in this capture
 
 ## Notes

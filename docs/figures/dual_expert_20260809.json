@@ -1,0 +1,182 @@
+{
+  "dataset": "nids_windows_20260809_000851.csv",
+  "split": {
+    "test_size": 0.3,
+    "random_state": 42
+  },
+  "expert_w_features": [
+    "total_packets",
+    "packet_density",
+    "beacon_packets",
+    "deauth_packets",
+    "deauth_targeted",
+    "probe_packets",
+    "auth_packets",
+    "seq_jump"
+  ],
+  "expert_h_features": [
+    "heap",
+    "minheap",
+    "reconn",
+    "qpeak",
+    "udpfail",
+    "backlog"
+  ],
+  "fusion": "logical_OR_and_gated_OR",
+  "h_proba_gate": 0.85,
+  "note": "Offline dual-expert for advisor narrative. Naive OR recovers ARP/SYN but raises FPR; gated OR is the practical path. MCU still ships nids-counts unless a gated OR is later exported.",
+  "models": [
+    {
+      "name": "Expert-W nids-counts",
+      "precision": 0.6912751677852349,
+      "recall": 0.4881516587677725,
+      "f1": 0.5722222222222222,
+      "fpr": 0.061952861952861954,
+      "auc": 0.8021462651794405,
+      "accuracy": 0.8384897745149449,
+      "cm": [
+        [
+          1393,
+          92
+        ],
+        [
+          216,
+          206
+        ]
+      ],
+      "per_attack_recall": {
+        "ARP_SPOOF": 0.023529411764705882,
+        "DEAUTH": 0.8021978021978022,
+        "SYN_FLOOD": 0.3741935483870968
+      }
+    },
+    {
+      "name": "Expert-H HIDS-only",
+      "precision": 0.435589519650655,
+      "recall": 0.9454976303317536,
+      "f1": 0.5964125560538116,
+      "fpr": 0.34814814814814815,
+      "auc": 0.8843043388067086,
+      "accuracy": 0.7168327215521761,
+      "cm": [
+        [
+          968,
+          517
+        ],
+        [
+          23,
+          399
+        ]
+      ],
+      "per_attack_recall": {
+        "ARP_SPOOF": 1.0,
+        "DEAUTH": 0.9395604395604396,
+        "SYN_FLOOD": 0.9225806451612903
+      }
+    },
+    {
+      "name": "Fusion W OR H",
+      "precision": 0.4045954045954046,
+      "recall": 0.9597156398104265,
+      "f1": 0.5692199578355587,
+      "fpr": 0.40134680134680134,
+      "auc": 0.8884556465125185,
+      "accuracy": 0.6785527005768223,
+      "cm": [
+        [
+          889,
+          596
+        ],
+        [
+          17,
+          405
+        ]
+      ],
+      "per_attack_recall": {
+        "ARP_SPOOF": 1.0,
+        "DEAUTH": 0.9615384615384616,
+        "SYN_FLOOD": 0.9354838709677419
+      }
+    },
+    {
+      "name": "Fusion W OR H(p>=0.85)",
+      "precision": 0.6520618556701031,
+      "recall": 0.5995260663507109,
+      "f1": 0.6246913580246913,
+      "fpr": 0.09090909090909091,
+      "auc": 0.8341671054941198,
+      "accuracy": 0.8405873099108547,
+      "cm": [
+        [
+          1350,
+          135
+        ],
+        [
+          169,
+          253
+        ]
+      ],
+      "per_attack_recall": {
+        "ARP_SPOOF": 0.023529411764705882,
+        "DEAUTH": 0.9615384615384616,
+        "SYN_FLOOD": 0.49032258064516127
+      }
+    }
+  ],
+  "test_attack_overlap": {
+    "both_attack": 213,
+    "only_W": 85,
+    "only_H": 703,
+    "n_test": 1907
+  },
+  "busy_proxy_fp": {
+    "W": {
+      "n": 1473,
+      "peak_center": "2026-08-09 00:16:42.600000",
+      "attack_rate": 0.06924643584521385
+    },
+    "H": {
+      "n": 1473,
+      "peak_center": "2026-08-09 00:16:42.600000",
+      "attack_rate": 0.1296673455532926
+    },
+    "OR": {
+      "n": 1473,
+      "peak_center": "2026-08-09 00:16:42.600000",
+      "attack_rate": 0.19144602851323828
+    },
+    "OR_gated": {
+      "n": 1473,
+      "peak_center": "2026-08-09 00:16:42.600000",
+      "attack_rate": 0.11133740665308893
+    }
+  },
+  "expert_w_importances": {
+    "total_packets": 0.3627242480751107,
+    "packet_density": 0.06083823540526973,
+    "deauth_packets": 0.5594548602603325,
+    "deauth_targeted": 0.0037774052132876095,
+    "seq_jump": 0.013205251045999494
+  },
+  "expert_h_importances": {
+    "heap": 0.3201159944882304,
+    "udpfail": 0.6798840055117695
+  },
+  "hids_fill_for_W": {
+    "heap": 65288.0,
+    "minheap": 1080.0,
+    "reconn": 5097.0,
+    "qpeak": 100.0,
+    "udpfail": 12996.0,
+    "backlog": 0.0,
+    "rssi_mean": -71.0,
+    "rssi_var": 0.0,
+    "snr_mean": 24.6
+  },
+  "attack_type_train": {
+    "NONE": 3462,
+    "SYN_FLOOD": 340,
+    "DEAUTH": 474,
+    "ARP_SPOOF": 171
+  }
+}
