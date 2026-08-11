@@ -70,10 +70,15 @@ python host/train/analyze_and_train.py --strict-export
 ```bash
 git clone <your-repo-url>
 cd nids_esp32_project
-pip install -r requirements.txt
+python -m venv .venv          # recommended (Windows: py -3 -m venv .venv)
+# Windows: .\.venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt   # includes optional XGBoost/LightGBM for offline comparison
 # Kali / Pi：每次新 clone（或 pull 後腳本仍不能 ./ 執行）都要：
 chmod +x host/attacks/*.sh scripts/*.sh
 ```
+
+**Train tip:** activate `.venv` before `analyze_and_train.py` so boosters appear in `model_comparison.png`. MCU export remains the shallow DecisionTree (`model.h`), not Boost.
 
 **Network / IP（多數不用手填）：**
 

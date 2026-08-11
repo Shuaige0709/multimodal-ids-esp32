@@ -1,42 +1,41 @@
 {
-  "dataset": "nids_windows_20260809_000851.csv",
-  "n_windows": 6354,
-  "n_normal": 4947,
-  "n_attack": 1407,
+  "dataset": "nids_windows_20260810_002829.csv",
+  "n_windows": 998,
+  "n_normal": 641,
+  "n_attack": 357,
   "attack_type_counts": {
-    "DEAUTH": 656,
-    "SYN_FLOOD": 495,
-    "ARP_SPOOF": 256
+    "AUTH_FLOOD": 170,
+    "DEAUTH": 187
   },
-  "ratio_attack_over_normal": 0.28441479684657367,
+  "ratio_attack_over_normal": 0.5569422776911076,
   "gates": {
     "normal_count": {
       "ok": true,
-      "detail": "normal=4947 (need >=200)"
+      "detail": "normal=641 (need >=200)"
     },
     "attack_DEAUTH": {
       "ok": true,
-      "detail": "DEAUTH=656 (need >=150)"
+      "detail": "DEAUTH=187 (need >=80)"
     },
     "attack_SYN_FLOOD": {
-      "ok": true,
-      "detail": "SYN_FLOOD=495 (need >=150)"
+      "ok": false,
+      "detail": "SYN_FLOOD=0 (need >=80)"
     },
     "attack_ARP_SPOOF": {
-      "ok": true,
-      "detail": "ARP_SPOOF=256 (need >=150)"
+      "ok": false,
+      "detail": "ARP_SPOOF=0 (need >=80)"
     },
     "attack_AUTH_FLOOD": {
-      "ok": false,
-      "detail": "AUTH_FLOOD=0 (need >=150)"
+      "ok": true,
+      "detail": "AUTH_FLOOD=170 (need >=80)"
     },
     "not_syn_dominated_ratio": {
       "ok": true,
-      "detail": "attack/normal=0.28 (want <=8; old SYN-heavy sets fail)"
+      "detail": "attack/normal=0.56 (want <=8; old SYN-heavy sets fail)"
     },
     "syn_share": {
       "ok": true,
-      "detail": "SYN share=35.18% of attacks (want <=70%)"
+      "detail": "SYN share=0.00% of attacks (want <=70%)"
     }
   },
   "pass": false,
