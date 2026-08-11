@@ -1,0 +1,104 @@
+{
+  "k": 2.0,
+  "calib_frac": 0.3,
+  "absolute_tot_thr": 27.5,
+  "note": "Offline stand-in for nids-counts density leaf vs per-capture IDLE p90*k. Not exported to MCU. September: reopen Phase C on fixed AP.",
+  "datasets": [
+    {
+      "label": "matched_20260809",
+      "path": "C:\\Users\\yanwe\\OneDrive\\Desktop\\Projects\\espidf\\nids_esp32_project\\data\\windows\\nids_windows_20260809_000851.csv",
+      "n_windows": 6354,
+      "idle_stats": {
+        "n": 4947,
+        "tot_mean": 188.59773600161714,
+        "tot_p90_all": 499.0,
+        "calib_n": 1484,
+        "calib_p50": 227.0,
+        "calib_p90": 499.0,
+        "rel_threshold": 998.0
+      },
+      "absolute": {
+        "thr_tot": 27.5,
+        "fpr_all_none": 0.4744289468364665,
+        "fpr_holdout_none": 0.43286168062373664,
+        "deauth_recall": 0.788109756097561,
+        "auth_flood_rate": null,
+        "syn_recall": 0.5595959595959596,
+        "arp_recall": 0.03515625
+      },
+      "relative_k": {
+        "k": 2.0,
+        "fpr_all_none": 0.006064281382656155,
+        "fpr_holdout_none": 0.0031764366156511693,
+        "deauth_recall": 0.6844512195121951,
+        "auth_flood_rate": null,
+        "syn_recall": 0.00202020202020202,
+        "arp_recall": 0.00390625
+      }
+    },
+    {
+      "label": "quiet_auth_try_002829",
+      "path": "C:\\Users\\yanwe\\OneDrive\\Desktop\\Projects\\espidf\\nids_esp32_project\\data\\windows\\nids_windows_20260810_002829.csv",
+      "n_windows": 998,
+      "idle_stats": {
+        "n": 641,
+        "tot_mean": 4.421216848673947,
+        "tot_p90_all": 9.0,
+        "calib_n": 192,
+        "calib_p50": 3.0,
+        "calib_p90": 9.0,
+        "rel_threshold": 18.0
+      },
+      "absolute": {
+        "thr_tot": 27.5,
+        "fpr_all_none": 0.0327613104524181,
+        "fpr_holdout_none": 0.0378619153674833,
+        "deauth_recall": 0.8502673796791443,
+        "auth_flood_rate": 0.023529411764705882,
+        "syn_recall": null,
+        "arp_recall": null
+      },
+      "relative_k": {
+        "k": 2.0,
+        "fpr_all_none": 0.0390015600624025,
+        "fpr_holdout_none": 0.0378619153674833,
+        "deauth_recall": 0.8663101604278075,
+        "auth_flood_rate": 0.023529411764705882,
+        "syn_recall": null,
+        "arp_recall": null
+      }
+    },
+    {
+      "label": "busy_auth_try_221217",
+      "path": "C:\\Users\\yanwe\\OneDrive\\Desktop\\Projects\\espidf\\nids_esp32_project\\data\\windows\\nids_windows_20260810_221217.csv",
+      "n_windows": 5787,
+      "idle_stats": {
+        "n": 1534,
+        "tot_mean": 31.002607561929597,
+        "tot_p90_all": 66.0,
+        "calib_n": 460,
+        "calib_p50": 16.0,
+        "calib_p90": 38.0,
+        "rel_threshold": 76.0
+      },
+      "absolute": {
+        "thr_tot": 27.5,
+        "fpr_all_none": 0.4361147327249022,
+        "fpr_holdout_none": 0.515828677839851,
+        "deauth_recall": null,
+        "auth_flood_rate": 0.6865741829296966,
+        "syn_recall": null,
+        "arp_recall": null
+      },
+      "relative_k": {
+        "k": 2.0,
+        "fpr_all_none": 0.08539765319426336,
+        "fpr_holdout_none": 0.1154562383612663,
+        "deauth_recall": null,
+        "auth_flood_rate": 0.2438278861979779,
+        "syn_recall": null,
+        "arp_recall": null
+      }
+    }
+  ]
+}
