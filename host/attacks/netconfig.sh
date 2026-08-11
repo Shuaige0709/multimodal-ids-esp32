@@ -104,9 +104,9 @@ airodump_find_ap() {
 
   tmpdir="$(mktemp -d)"
   echo "[netconfig] airodump ${sec}s on ${mon} for ESSID '${essid}' ..." >&2
-  # timeout may return 124; CSV may still be written
-  timeout "$sec" airodump-ng --essid "$essid" -w "${tmpdir}/scan" --output-format csv \
-    "$mon" >/dev/null 2>&1 || true
+  # airodump-ng often ignores SIGTERM; -k 2 → KILL after grace. 124 = timed out; CSV may still exist.
+  timeout -k 2 "$sec" airodump-ng --essid "$essid" -w "${tmpdir}/scan" --output-format csv \
+    --write-interval 1 "$mon" >/dev/null 2>&1 || true
 
   csv="$(ls -1 "${tmpdir}"/scan-*.csv 2>/dev/null | head -n1 || true)"
   if [[ -z "${csv:-}" || ! -s "$csv" ]]; then
