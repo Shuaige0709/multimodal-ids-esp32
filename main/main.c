@@ -24,6 +24,7 @@
 
 #include "net_config.h"   // WIFI_SSID/PASS, ports, auto-discovery settings (single source of truth)
 #include "model.h"        // generated on-device inference model (nids_window_features_t / nids_predict)
+#include "nids_calib.h"   // IDLE baseline post-filter (CALIBRATING → ARMED)
 
 #define SYSLOG_PRI 14      // Facility: User(1) * 8 + Severity: Info(6)
 #define VERSION "1"
@@ -664,6 +665,10 @@ void nids_analysis_task(void* arg){
     int64_t w_rssi_sq_sum = 0;
     uint32_t w_rssi_cnt = 0;
 
+#if NIDS_CALIB_ENABLE
+    nids_calib_reset();
+#endif
+
     // Destination is resolved per send from the auto-discovered collector (see resolve_collector).
     struct sockaddr_in dest_addr;
     memset(&dest_addr, 0, sizeof(dest_addr));
@@ -748,10 +753,22 @@ void nids_analysis_task(void* arg){
                 int64_t t0 = esp_timer_get_time();
                 int pred = nids_predict(&f);
                 last_inference_us = (uint32_t)(esp_timer_get_time() - t0);
+#if NIDS_CALIB_ENABLE
+                attack_detected = nids_calib_on_window(&f, pred);
+#else
                 attack_detected = (pred != 0);
+#endif
 
                 if (attack_detected) {
-                    ESP_LOGW(TAG2, "[INFERENCE] attack window: pkts=%lu deauth=%lu tgt=%lu jump=%lu density=%.0f heap=%.0f (%lu us)",
+                    ESP_LOGW(TAG2,
+                             "[INFERENCE] attack window: pred=%d calib=%s thr=%.1f pkts=%lu deauth=%lu tgt=%lu jump=%lu density=%.0f heap=%.0f (%lu us)",
+                             pred,
+#if NIDS_CALIB_ENABLE
+                             nids_calib_state() == NIDS_CALIB_ARMED ? "ARMED" : "CALIB",
+                             nids_calib_thr_tot(),
+#else
+                             "OFF", 0.0,
+#endif
                              (unsigned long)w_total, (unsigned long)w_deauth,
                              (unsigned long)w_deauth_tgt, (unsigned long)w_seq_jump,
                              f.packet_density, f.heap,

@@ -42,4 +42,35 @@
 #define HIPS_ENABLE_DISCONNECT 0
 #define HIPS_DISCONNECT_COOLDOWN_MS 10000
 
+/*
+ * On-device IDLE baseline calibration (post-filter; does not change model.h).
+ * First NIDS_CALIB_MS after analysis start: learn busy-air p90 of total_packets;
+ * then require total_packets > k*p90 for non-deauth attack accepts. Deauth bypasses.
+ * Assumption: first ~45s is benign background (no scripted attacks); busy RF is OK.
+ */
+#ifndef NIDS_CALIB_ENABLE
+#define NIDS_CALIB_ENABLE 1
+#endif
+#ifndef NIDS_CALIB_MS
+#define NIDS_CALIB_MS 45000
+#endif
+#ifndef NIDS_CALIB_K
+#define NIDS_CALIB_K 2.0f
+#endif
+#ifndef NIDS_CALIB_STREAK
+#define NIDS_CALIB_STREAK 3
+#endif
+#ifndef NIDS_CALIB_DEAUTH_STREAK
+#define NIDS_CALIB_DEAUTH_STREAK 1
+#endif
+#ifndef NIDS_CALIB_CLEAR_STREAK
+#define NIDS_CALIB_CLEAR_STREAK 2
+#endif
+#ifndef NIDS_CALIB_RING
+#define NIDS_CALIB_RING 128
+#endif
+#ifndef NIDS_CALIB_MIN_SAMPLES
+#define NIDS_CALIB_MIN_SAMPLES 32
+#endif
+
 #endif /* NIDS_NET_CONFIG_H */
