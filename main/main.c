@@ -371,6 +371,9 @@ void wifi_scan_task(){
     }
 }
 
+static int ieee80211_data_hdrlen(const uint8_t *p, uint32_t len);
+static int classify_arp_opcode(const uint8_t *p, uint32_t len);
+
 // This callback will be called for each received WiFi packet in promiscuous mode
 void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
     // wifi_promiscuous_pkt_t is the structure of the received packet in 
@@ -476,6 +479,15 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
                     info.deauth_targeted = 1;
                 }
             }
+        } else if (frame_type == 2) {
+            int arp_op = classify_arp_opcode(pkt->payload, info.len);
+            if (arp_op == 1) {
+                strcpy(info.subtype, "ARP_REQ");
+            } else if (arp_op == 2) {
+                strcpy(info.subtype, "ARP_REPLY");
+            } else {
+                info.subtype[0] = '\0';
+            }
         } else {
             info.subtype[0] = '\0';
         }
@@ -498,8 +510,70 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
     // pkt->rx_ctrl.mcs;
 }
 
+/* 802.11 data header length (ToDS/FromDS, QoS, HT Order). ISR-safe. */
+static int ieee80211_data_hdrlen(const uint8_t *p, uint32_t len)
+{
+    if (len < 24) {
+        return -1;
+    }
+    uint8_t type = (p[0] >> 2) & 0x3;
+    uint8_t subtype = (p[0] >> 4) & 0xF;
+    int hdr = 24;
+    if ((p[1] & 0x03) == 0x03) {
+        hdr += 6; /* WDS addr4 */
+    }
+    if (type == 2 && (subtype & 0x08)) {
+        hdr += 2; /* QoS */
+    }
+    if (p[1] & 0x80) {
+        hdr += 4; /* HT control */
+    }
+    return hdr;
+}
+
+/*
+ * LLC/SNAP ARP in plaintext data frames. Returns 1=request, 2=reply, else 0.
+ * WPA2 CCMP (Protected bit) hides LLC — smoke test will show if this AP is opaque.
+ */
+static int classify_arp_opcode(const uint8_t *p, uint32_t len)
+{
+    if (len < 26) {
+        return 0;
+    }
+    if (((p[0] >> 2) & 0x3) != 2) {
+        return 0;
+    }
+    if (p[1] & 0x40) {
+        return 0; /* encrypted */
+    }
+    uint8_t subtype = (p[0] >> 4) & 0xF;
+    if (subtype == 4 || subtype == 12) {
+        return 0; /* null / QoS null */
+    }
+    int hdr = ieee80211_data_hdrlen(p, len);
+    if (hdr < 0 || (uint32_t)hdr + 16 > len) {
+        return 0;
+    }
+    const uint8_t *llc = p + hdr;
+    if (llc[0] != 0xAA || llc[1] != 0xAA || llc[2] != 0x03) {
+        return 0;
+    }
+    uint16_t eth = ((uint16_t)llc[6] << 8) | llc[7];
+    if (eth != 0x0806) {
+        return 0;
+    }
+    uint16_t op = ((uint16_t)llc[14] << 8) | llc[15];
+    if (op == 1) {
+        return 1;
+    }
+    if (op == 2) {
+        return 2;
+    }
+    return 0;
+}
+
 void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap, int64_t uptime_ms,
-                    uint32_t win_pkts, double win_density) {
+                    uint32_t win_pkts, double win_density, uint32_t arp_req, uint32_t arp_rep) {
     // 1. produce ISO 8601 timestamp with milliseconds precision
     // Note: Currently we are not synchronizing with NTP, so this timestamp is relative to the device startup time
     struct timeval tv;
@@ -516,7 +590,8 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         "heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" "
         "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\" "
         "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\" "
-        "win_pkts=\"%lu\" win_dens=\"%.1f\" pred=\"%d\" calib=\"%s\" thr=\"%.1f\"]",
+        "win_pkts=\"%lu\" win_dens=\"%.1f\" pred=\"%d\" calib=\"%s\" thr=\"%.1f\" "
+        "arp_req=\"%lu\" arp_rep=\"%lu\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
@@ -527,7 +602,8 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         (unsigned)info->deauth_targeted, (unsigned)info->seq_jump,
         ap_bssid_str, (unsigned)ap_channel,
         (unsigned long)win_pkts, win_density,
-        (int)last_raw_pred, nids_calib_state_str(), nids_calib_thr_tot());
+        (int)last_raw_pred, nids_calib_state_str(), nids_calib_thr_tot(),
+        (unsigned long)arp_req, (unsigned long)arp_rep);
     if (n < 0 || (size_t)n >= size) {
         ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=%u",
                  n, (unsigned)size, (unsigned)SYSLOG_MSG_MAX);
@@ -662,7 +738,7 @@ void nids_analysis_task(void* arg){
     const int64_t WINDOW_US = 100000; // 100 ms
     int64_t window_start_us = esp_timer_get_time();
     uint32_t w_total = 0, w_beacon = 0, w_deauth = 0, w_probe = 0, w_auth = 0;
-    uint32_t w_deauth_tgt = 0, w_seq_jump = 0;
+    uint32_t w_deauth_tgt = 0, w_seq_jump = 0, w_arp_req = 0, w_arp_rep = 0;
     int32_t w_rssi_sum = 0, w_snr_sum = 0;
     int64_t w_rssi_sq_sum = 0;
     uint32_t w_rssi_cnt = 0;
@@ -712,18 +788,23 @@ void nids_analysis_task(void* arg){
             else if (strcmp(info.subtype, "DISASSOC") == 0)   w_deauth++;
             else if (strncmp(info.subtype, "PROBE", 5) == 0)  w_probe++;
             else if (strcmp(info.subtype, "AUTH") == 0)       w_auth++;
+            else if (strcmp(info.subtype, "ARP_REQ") == 0)    w_arp_req++;
+            else if (strcmp(info.subtype, "ARP_REPLY") == 0)  w_arp_rep++;
             if (info.deauth_targeted) w_deauth_tgt++;
             if (info.seq_jump)        w_seq_jump++;
 
             int64_t win_now_us = esp_timer_get_time();
             uint32_t closed_win_pkts = 0;
             double closed_win_density = 0.0;
+            uint32_t closed_win_arp_req = 0, closed_win_arp_rep = 0;
             bool just_closed_window = false;
             if ((win_now_us - window_start_us) >= WINDOW_US) {
                 double dt = (double)(win_now_us - window_start_us) / 1000000.0;
                 if (dt <= 0) dt = 0.1;
                 closed_win_pkts = w_total;
                 closed_win_density = (double)w_total / dt;
+                closed_win_arp_req = w_arp_req;
+                closed_win_arp_rep = w_arp_rep;
                 just_closed_window = true;
                 double rssi_mean = w_rssi_cnt ? (double)w_rssi_sum / w_rssi_cnt : 0.0;
                 double rssi_var = 0.0;
@@ -785,6 +866,7 @@ void nids_analysis_task(void* arg){
                 window_start_us = win_now_us;
                 w_total = w_beacon = w_deauth = w_probe = w_auth = 0;
                 w_deauth_tgt = w_seq_jump = 0;
+                w_arp_req = w_arp_rep = 0;
                 w_rssi_sum = w_snr_sum = 0; w_rssi_sq_sum = 0; w_rssi_cnt = 0;
             }
             
@@ -807,9 +889,12 @@ void nids_analysis_task(void* arg){
                 // Prefer just-closed window totals so syslog matches nids_predict inputs.
                 uint32_t report_pkts;
                 double report_dens;
+                uint32_t report_arp_req, report_arp_rep;
                 if (just_closed_window) {
                     report_pkts = closed_win_pkts;
                     report_dens = closed_win_density;
+                    report_arp_req = closed_win_arp_req;
+                    report_arp_rep = closed_win_arp_rep;
                 } else {
                     int64_t elapsed_us = esp_timer_get_time() - window_start_us;
                     if (elapsed_us < 1000) {
@@ -817,9 +902,11 @@ void nids_analysis_task(void* arg){
                     }
                     report_pkts = w_total;
                     report_dens = (double)w_total / ((double)elapsed_us / 1000000.0);
+                    report_arp_req = w_arp_req;
+                    report_arp_rep = w_arp_rep;
                 }
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms,
-                               report_pkts, report_dens);
+                               report_pkts, report_dens, report_arp_req, report_arp_rep);
 
                 if(SYSlOG_MODE == 1){
                     if (wifi_connected && sock >= 0 && udp_ready) {

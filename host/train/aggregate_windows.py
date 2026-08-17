@@ -38,7 +38,7 @@ if _ROOT not in sys.path:
 
 from host.paths import DATA_RAW, DATA_WINDOWS, ensure_data_dirs  # noqa: E402
 from host.train.nids_features import (  # noqa: E402
-    WINDOW_FEATURES, LABEL_COL, ATTACK_TYPE_COL, WINDOW_START_COL,
+    WINDOW_FEATURES, ARP_WINDOW_FEATURES, LABEL_COL, ATTACK_TYPE_COL, WINDOW_START_COL,
     rf_sample_valid,
 )
 
@@ -121,6 +121,14 @@ def aggregate_rows(rows, window_sec, density_source_stats=None):
         deauth = sum(1 for s in subs if s in ("DEAUTH", "DISASSOC"))
         probe = sum(1 for s in subs if s.startswith("PROBE"))
         auth = sum(1 for s in subs if s == "AUTH")
+        arp_req_csv = sum(1 for s in subs if s == "ARP_REQ")
+        arp_rep_csv = sum(1 for s in subs if s == "ARP_REPLY")
+        fw_arp_req = [_to_float(r.get("win_arp_req")) for r in group
+                      if r.get("win_arp_req") not in (None, "")]
+        fw_arp_rep = [_to_float(r.get("win_arp_rep")) for r in group
+                      if r.get("win_arp_rep") not in (None, "")]
+        arp_req = int(max(fw_arp_req)) if fw_arp_req else arp_req_csv
+        arp_rep = int(max(fw_arp_rep)) if fw_arp_rep else arp_rep_csv
         # P0 WIDS: prefer firmware-emitted flags; fall back to 0 on old CSVs
         deauth_tgt = sum(1 for r in group if int(_to_float(r.get("deauth_tgt"))) > 0)
         seq_jump = sum(1 for r in group if int(_to_float(r.get("seq_jump"))) > 0)
@@ -138,6 +146,8 @@ def aggregate_rows(rows, window_sec, density_source_stats=None):
             "deauth_targeted": deauth_tgt,
             "probe_packets": probe,
             "auth_packets": auth,
+            "arp_req_packets": arp_req,
+            "arp_reply_packets": arp_rep,
             "seq_jump": seq_jump,
             # RF means use cleaned samples only (dirty → leave 0 / empty-window default)
             "rssi_mean": float(rssi.mean()) if len(rssi) else 0.0,
@@ -223,7 +233,7 @@ def main():
         stamp = os.path.basename(inputs[-1]).replace("nids_dataset_", "").replace(".csv", "")
         out_path = os.path.join(DATA_WINDOWS, f"nids_windows_{stamp}.csv")
 
-    cols = [WINDOW_START_COL] + WINDOW_FEATURES + [LABEL_COL, ATTACK_TYPE_COL]
+    cols = [WINDOW_START_COL] + WINDOW_FEATURES + ARP_WINDOW_FEATURES + [LABEL_COL, ATTACK_TYPE_COL]
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=cols)
         writer.writeheader()
