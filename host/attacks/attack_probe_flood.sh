@@ -64,15 +64,19 @@ send_label START PROBE_FLOOD
 LABEL_SENT=1
 sleep 0.5
 
+# mdk4 mode p: -e SSID loops probes until killed. Do NOT pass -t with -e —
+# this build prints "Targets (-t) are not needed" and exits 1 immediately.
 set +e
-if [[ -n "${BSSID:-}" && "$BSSID" != "null" ]]; then
-  timeout "$DURATION" mdk4 "$MON_IFACE" p -e "$SSID" -t "$BSSID" -s "$PPS"
-else
-  timeout "$DURATION" mdk4 "$MON_IFACE" p -e "$SSID" -s "$PPS"
-fi
+timeout "$DURATION" mdk4 "$MON_IFACE" p -e "$SSID" -s "$PPS"
 rc=$?
 set -e
-echo ">>> mdk4 finished rc=${rc} (124=timeout/duration OK)"
+if [[ "$rc" -eq 124 ]]; then
+  echo ">>> mdk4 finished rc=124 (duration OK)"
+elif [[ "$rc" -eq 0 ]]; then
+  echo ">>> mdk4 finished rc=0"
+else
+  echo ">>> ERROR: mdk4 aborted rc=${rc} — flood did not run. Do not use this labeled slice." >&2
+fi
 
 sleep 1
 send_label STOP PROBE_FLOOD
