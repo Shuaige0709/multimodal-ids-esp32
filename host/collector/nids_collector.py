@@ -64,8 +64,8 @@ regex = re.compile(
     r'(?: pred="(?P<pred>[^"]+)")?'
     r'(?: calib="(?P<calib>[^"]+)")?'
     r'(?: thr="(?P<thr>[^"]+)")?'
-    r'(?: arp_req="(?P<arp_req>[^"]+)")?'
-    r'(?: arp_rep="(?P<arp_rep>[^"]+)")?'
+    r'(?: gw_mac="(?P<gw_mac>[^"]+)")?'
+    r'(?: gw_flip="(?P<gw_flip>[^"]+)")?'
     r'\]'
 )
 
@@ -73,7 +73,8 @@ _META_KEYS = (
     "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
     "host_mac", "attack", "deauth_tgt", "seq_jump", "ap_bssid", "channel",
-    "win_pkts", "win_dens", "pred", "calib", "thr", "arp_req", "arp_rep",
+    "win_pkts", "win_dens", "pred", "calib", "thr",
+    "gw_mac", "gw_flip",
 )
 _KV_RE = re.compile(r'([a-z_]+)="([^"]*)"')
 _PEN_RE = re.compile(r'\[meta@(\S+)')
@@ -92,7 +93,8 @@ def parse_syslog_meta(log_line):
     if pen_m:
         pairs["pen"] = pen_m.group(1)
     str_keys = ("subtype", "host_mac", "attack", "ap_bssid", "channel",
-                "win_pkts", "win_dens", "pred", "calib", "thr", "arp_req", "arp_rep")
+                "win_pkts", "win_dens", "pred", "calib", "thr",
+                "gw_mac", "gw_flip")
     for key in _META_KEYS:
         pairs.setdefault(key, "" if key in str_keys else "0")
     return pairs, True
@@ -373,7 +375,7 @@ def start_receiver():
             "host_mac", "pred_attack", "pred_raw", "calib", "calib_thr",
             "deauth_tgt", "seq_jump",
             "ap_bssid", "channel", "win_pkts", "win_dens",
-            "win_arp_req", "win_arp_rep",
+            "gw_mac", "gw_flip",
             "label", "attack_type", "timestamp"
         ])
 
@@ -468,7 +470,7 @@ def start_receiver():
                         d.get("deauth_tgt", "0"), d.get("seq_jump", "0"),
                         d.get("ap_bssid", ""), d.get("channel", ""),
                         d.get("win_pkts", ""), d.get("win_dens", ""),
-                        d.get("arp_req", ""), d.get("arp_rep", ""),
+                        d.get("gw_mac", ""), d.get("gw_flip", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
                     f.flush()
@@ -486,13 +488,13 @@ def start_receiver():
                     cal = d.get("calib") or "-"
                     pr = d.get("pred") or "-"
                     ga = d.get("attack") or "-"
-                    ar = d.get("arp_req") or "-"
-                    ap = d.get("arp_rep") or "-"
+                    gwm = d.get("gw_mac") or "-"
+                    gwf = d.get("gw_flip") or "-"
                     print(
                         f"{status_indicator} [{gen_time.strftime('%H:%M:%S.%f')[:-3]}] (Recv: {log_time.strftime('%H:%M:%S.%f')[:-3]}) "
                         f"RSSI={d['rssi']:>4}dBm, SNR={d['snr']:>3}dB, "
                         f"IPAT={d['ipat']:>6}us, HEAP={d['heap']:>6}B, "
-                        f"win={wp}/{wd} arp={ar}/{ap} calib={cal} pred={pr}/{ga} | Type: {packet_attack_type}"
+                        f"win={wp}/{wd} gw={gwm} flip={gwf} calib={cal} pred={pr}/{ga} | Type: {packet_attack_type}"
                     )
 
 

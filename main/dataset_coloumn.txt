@@ -15,6 +15,7 @@ pred_attack: 閘門後是否報攻擊（syslog `attack=`；calib 後的結果，
 pred_raw: 樹上 `nids_predict` 原值（syslog `pred=`）。`pred_raw=1` 且 `pred_attack=0` = calib 否決密度葉。
 calib: 校準狀態 `CALIB`／`ARMED`／`OFF`（syslog `calib=`）。
 calib_thr: ARMED 後密度閘門 `k×p90`（syslog `thr=`）。CALIB 期間多半仍是預設 1.0。
-win_arp_req / win_arp_rep: 同一 100 ms 窗內明文 LLC/SNAP ARP request／reply 計數（syslog `arp_req=` / `arp_rep=`）。**尚未進 model.h**。WPA2 加密資料幀可能全 0。
+gw_mac: STA 目前 ARP 到的 gateway MAC（syslog `gw_mac=`）。未解析時為 `-`。
+gw_flip: gateway IP 不變但 MAC 變更的次數（syslog `gw_flip=`）。HIDS 側欄，**尚未進 model.h**。重連會歸零。
 label: 資料標註（由使用者或攻擊腳本指定的標籤，例如 baseline/attack1），用於後處理與分類。
 timestamp: 封包的時間戳（來自無線硬體/metadata，通常為微秒等解析度），用於計算 ipat 與事件排序。

@@ -2,8 +2,9 @@
 # Two-way ARP spoof + labeling.
 # Usage: sudo ./host/attacks/arpspoof.sh
 #
-# Needs managed Wi-Fi (not monitor). Visibility smoke: CSV subtype ARP_REQ/ARP_REPLY
-# or win_arp_req/win_arp_rep should rise vs IDLE. Do not retrain model.h until that gate.
+# Needs managed Wi-Fi (not monitor). Visibility smoke: CSV gw_flip should rise
+# vs IDLE (STA gateway MAC edge). Air LLC ARP was dropped (WPA2 opaque).
+# Do not retrain model.h until that gate.
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=netconfig.sh

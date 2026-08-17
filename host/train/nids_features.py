@@ -35,10 +35,9 @@ WINDOW_FEATURES = [
     "backlog",          # HIDS: syslog backlog depth
 ]
 
-# Sidecar ARP window counts (syslog win_arp_*). NOT in model.h until visibility smoke passes.
-ARP_WINDOW_FEATURES = [
-    "arp_req_packets",
-    "arp_reply_packets",
+# Sidecar HIDS: gateway MAC flips (syslog gw_flip). NOT in model.h until smoke passes.
+HIDS_GW_FEATURES = [
+    "gw_mac_flip",
 ]
 
 # Wireless / RF-side features (no host state).

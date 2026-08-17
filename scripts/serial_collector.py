@@ -46,8 +46,8 @@ SD_RE = re.compile(
     r"(?: pred=\"(?P<pred>[^\"]+)\")?"
     r"(?: calib=\"(?P<calib>[^\"]+)\")?"
     r"(?: thr=\"(?P<thr>[^\"]+)\")?"
-    r"(?: arp_req=\"(?P<arp_req>[^\"]+)\")?"
-    r"(?: arp_rep=\"(?P<arp_rep>[^\"]+)\")?"
+    r"(?: gw_mac=\"(?P<gw_mac>[^\"]+)\")?"
+    r"(?: gw_flip=\"(?P<gw_flip>[^\"]+)\")?"
     r"\]"
 )
 
@@ -55,7 +55,7 @@ HEADER = [
     "timestamp", "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped", "host_mac",
     "pred_attack", "pred_raw", "calib", "calib_thr", "deauth_tgt", "seq_jump",
-    "ap_bssid", "channel", "win_pkts", "win_dens", "win_arp_req", "win_arp_rep", "raw",
+    "ap_bssid", "channel", "win_pkts", "win_dens", "gw_mac", "gw_flip", "raw",
 ]
 
 
@@ -139,7 +139,7 @@ def main():
                         sd.get("pred"), sd.get("calib"), sd.get("thr"),
                         sd.get("deauth_tgt"), sd.get("seq_jump"), sd.get("ap_bssid"),
                         sd.get("channel"), sd.get("win_pkts"), sd.get("win_dens"),
-                        sd.get("arp_req"), sd.get("arp_rep"), line,
+                        sd.get("gw_mac"), sd.get("gw_flip"), line,
                     ])
                 else:
                     writer.writerow([time.time()] + [""] * (len(HEADER) - 2) + [line])
