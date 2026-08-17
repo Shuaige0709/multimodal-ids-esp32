@@ -40,13 +40,20 @@ SD_RE = re.compile(
     r"(?: deauth_tgt=\"(?P<deauth_tgt>[^\"]+)\")?"
     r"(?: seq_jump=\"(?P<seq_jump>[^\"]+)\")?"
     r"(?: ap_bssid=\"(?P<ap_bssid>[^\"]+)\")?"
-    r"(?: channel=\"(?P<channel>[^\"]+)\")?\]"
+    r"(?: channel=\"(?P<channel>[^\"]+)\")?"
+    r"(?: win_pkts=\"(?P<win_pkts>[^\"]+)\")?"
+    r"(?: win_dens=\"(?P<win_dens>[^\"]+)\")?"
+    r"(?: pred=\"(?P<pred>[^\"]+)\")?"
+    r"(?: calib=\"(?P<calib>[^\"]+)\")?"
+    r"(?: thr=\"(?P<thr>[^\"]+)\")?"
+    r"\]"
 )
 
 HEADER = [
     "timestamp", "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped", "host_mac",
-    "pred_attack", "deauth_tgt", "seq_jump", "ap_bssid", "channel", "raw",
+    "pred_attack", "pred_raw", "calib", "calib_thr", "deauth_tgt", "seq_jump",
+    "ap_bssid", "channel", "win_pkts", "win_dens", "raw",
 ]
 
 
@@ -127,8 +134,9 @@ def main():
                         sd.get("minheap"), sd.get("uptime"), sd.get("reconn"),
                         sd.get("qpeak"), sd.get("udpfail"), sd.get("backlog"),
                         sd.get("dropped"), sd.get("host_mac"), sd.get("attack"),
+                        sd.get("pred"), sd.get("calib"), sd.get("thr"),
                         sd.get("deauth_tgt"), sd.get("seq_jump"), sd.get("ap_bssid"),
-                        sd.get("channel"), line,
+                        sd.get("channel"), sd.get("win_pkts"), sd.get("win_dens"), line,
                     ])
                 else:
                     writer.writerow([time.time()] + [""] * (len(HEADER) - 2) + [line])

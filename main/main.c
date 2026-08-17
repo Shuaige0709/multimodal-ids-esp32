@@ -54,12 +54,12 @@ static const uint32_t SEND_INTERVAL_FAST = DATASET_PROFILE ? 50 : 20;
 static const uint32_t SEND_INTERVAL_SLOW = DATASET_PROFILE ? 100 : 50;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
 static const uint32_t SEND_RECOVER_THRESHOLD = 10;
-/* Keep backlog RAM ~same as before (was 512×256): fewer slots, longer lines. */
+/* Backlog: 256 slots × 512B. Keep at 512 — 640 overflowed dram0_0_seg. */
 static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 256 : 128;
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
-static const uint32_t SYSLOG_MSG_MAX = 512;
+#define SYSLOG_MSG_MAX 512
 
-static char syslog_backlog[256][512];
+static char syslog_backlog[256][SYSLOG_MSG_MAX];
 static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
@@ -85,7 +85,8 @@ static uint16_t last_seq_seen = 0;
 static bool last_seq_valid = false;
 
 // --- On-device 100 ms window aggregation + inference state ---
-static volatile bool attack_detected = false;                 // latest inference result (drives OLED / mitigation)
+static volatile bool attack_detected = false;                 // latest gated result (drives OLED / mitigation)
+static volatile int last_raw_pred = 0;                        // latest nids_predict before calib gate
 static volatile uint32_t last_inference_us = 0;               // most recent inference latency (microseconds)
 
 static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
@@ -255,7 +256,7 @@ static bool syslog_backlog_pop(char *message_out)
 
 static void flush_syslog_backlog(int sock, struct sockaddr_in *dest_addr)
 {
-    char backlog_message[512];
+    char backlog_message[SYSLOG_MSG_MAX];
     uint32_t flush_budget = SYSLOG_FLUSH_BUDGET;
 
     while (wifi_connected && flush_budget > 0 && syslog_backlog_pop(backlog_message)) {
@@ -515,7 +516,7 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         "heap=\"%lu\" minheap=\"%lu\" uptime=\"%lld\" reconn=\"%lu\" qpeak=\"%lu\" "
         "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\" "
         "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\" "
-        "win_pkts=\"%lu\" win_dens=\"%.1f\"]",
+        "win_pkts=\"%lu\" win_dens=\"%.1f\" pred=\"%d\" calib=\"%s\" thr=\"%.1f\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
@@ -525,10 +526,11 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         sta_mac_str, attack_detected ? 1 : 0,
         (unsigned)info->deauth_targeted, (unsigned)info->seq_jump,
         ap_bssid_str, (unsigned)ap_channel,
-        (unsigned long)win_pkts, win_density);
+        (unsigned long)win_pkts, win_density,
+        (int)last_raw_pred, nids_calib_state_str(), nids_calib_thr_tot());
     if (n < 0 || (size_t)n >= size) {
-        ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=512",
-                 n, (unsigned)size);
+        ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=%u",
+                 n, (unsigned)size, (unsigned)SYSLOG_MSG_MAX);
     }
 }
 
@@ -646,7 +648,7 @@ static void nids_mitigate(const nids_pkt_info_t *info)
 
 void nids_analysis_task(void* arg){
     nids_pkt_info_t info;
-    char syslog_buffer[512];
+    char syslog_buffer[SYSLOG_MSG_MAX];
     uint32_t pkt_count = 0;
 
     // OLED status counters
@@ -752,6 +754,7 @@ void nids_analysis_task(void* arg){
 
                 int64_t t0 = esp_timer_get_time();
                 int pred = nids_predict(&f);
+                last_raw_pred = pred;
                 last_inference_us = (uint32_t)(esp_timer_get_time() - t0);
 #if NIDS_CALIB_ENABLE
                 attack_detected = nids_calib_on_window(&f, pred);

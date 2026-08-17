@@ -31,6 +31,8 @@ void nids_calib_reset(void);
 int nids_calib_on_window(const nids_window_features_t *f, int raw_pred);
 
 nids_calib_state_t nids_calib_state(void);
+/** "OFF" / "CALIB" / "ARMED" — for syslog. */
+const char *nids_calib_state_str(void);
 double nids_calib_thr_tot(void);
 double nids_calib_p90_tot(void);
 

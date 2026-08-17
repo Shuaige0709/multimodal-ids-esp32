@@ -100,8 +100,8 @@ static void try_arm(void)
     s_latched = 0;
     if (!s_logged_arm) {
         s_logged_arm = 1;
-        ESP_LOGI(TAG,
-                 "ARMED after %lld ms: idle_samples=%d p90_tot=%.1f thr_tot=%.1f (k=%.2f)",
+        ESP_LOGW(TAG,
+                 "*** CALIB ARMED *** after %lld ms: idle_samples=%d p90_tot=%.1f thr_tot=%.1f (k=%.2f)",
                  (long long)elapsed_ms, s_ring_n, s_p90, s_thr, (double)NIDS_CALIB_K);
     }
 }
@@ -199,6 +199,22 @@ int nids_calib_on_window(const nids_window_features_t *f, int raw_pred)
 nids_calib_state_t nids_calib_state(void)
 {
     return s_state;
+}
+
+const char *nids_calib_state_str(void)
+{
+#if !NIDS_CALIB_ENABLE
+    return "OFF";
+#else
+    switch (s_state) {
+    case NIDS_CALIB_ARMED:
+        return "ARMED";
+    case NIDS_CALIB_CALIBRATING:
+        return "CALIB";
+    default:
+        return "OFF";
+    }
+#endif
 }
 
 double nids_calib_thr_tot(void)
