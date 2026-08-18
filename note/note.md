@@ -25,7 +25,7 @@
 ```
 Kali VM (USB Wi-Fi)  --空中攻擊-->  ESP32
 Kali VM              --label START/STOP-->  Collector            [OOB：見下方]
-ESP32                --syslog UDP------->  Collector             [手機熱點，IP 自動探索]
+ESP32                --syslog UDP------->  Collector             [同一 Wi‑Fi：AP 或熱點；IP 自動探索]
 Collector            --UDP beacon------->  ESP32                 [:5005]
 ```
 
@@ -43,13 +43,14 @@ Collector            --UDP beacon------->  ESP32                 [:5005]
 
 | 項目 | 誰改 | 怎麼做 |
 |------|------|--------|
-| 熱點 SSID／密碼 | 每人 flash 前 | 改 `main/net_config.h` 的 `WIFI_SSID` / `WIFI_PASS`，重燒 |
-| Collector IP | 通常不用 | 留 `COLLECTOR_FALLBACK_IP ""`；靠 discovery。beacon 失敗才填**自己** collector 的 Wi‑Fi IP |
-| Label（Kali→collector） | 通常不用 | 攻擊腳本讀 `live_state.label_host`；不對再 `export NIDS_LABEL_HOST=...` |
-| VMware host-only 子網 | 各人本機 | 以 VMware 實際為準（可能是 `.220.x` 或 `.124.x`），**不要抄別人的範例 IP** |
+| **AP／熱點 SSID／密碼** | 每人 flash 前 | 改 `main/net_config.h` 的 `WIFI_SSID` / `WIFI_PASS`，重燒 |
+| **Kali 攻擊 SSID** | Kali | `export NIDS_SSID=...`（與 net_config 一致；腳本預設 `302`） |
+| Collector IP | 通常不用 | 留 `COLLECTOR_FALLBACK_IP ""`；靠 discovery |
+| Label（Kali→collector） | 通常不用 | 攻擊腳本讀 `live_state.label_host`；Mode P 先 **`./scripts/nids-sync.sh`** |
+| VMware host-only 子網 | 各人本機 | 以 VMware 實際為準，**不要抄別人的範例 IP** |
 | Kali host-only 位址 | Kali | `prepare_wifi` 預設 `192.168.124.50/24`；子網不同就設 `NIDS_HOSTONLY_IP=...` |
 
-實驗步驟細節見 [`lab_runbook.md`](lab_runbook.md)。
+實驗步驟細節見 [`lab_runbook.md`](lab_runbook.md)。組員在**固定 AP**重試 ARP/AUTH → [`docs/HELP.md`](../docs/HELP.md)。
 
 ### 2.1 Deauth 斷線 vs 當初的樹莓派 / eth0（必讀）
 
@@ -70,7 +71,19 @@ Label 走 host-only／有線 OOB 只保證 **Kali→collector 的 START/STOP** �
 - **SYN / ARP（關聯多半還在）：** Windows 或 Pi 跑 collector + Wi-Fi UDP + auto-discovery  
 - Label 一律：Kali → `live_state.json` 的 `label_host`（Windows 模式常為 VMnet1 上的主機 IP）
 
-熱點若開 **AP isolation** 擋 client 互傳：即使沒 deauth，UDP 也可能失敗 → 查熱點設定，或改序列埠 / Pi 有線。
+**AP／熱點若開 client isolation** 擋 client 互傳：即使沒 deauth，UDP syslog 與 **ARP 煙測（`gw_flip`）** 也可能失敗 → 關隔離，或改序列埠 / Pi 有線。詳見 [`docs/HELP.md`](../docs/HELP.md)。
+
+### 2.3 攻擊可見性（煙測摘要，非 train 結論）
+
+| 攻擊 | 手機熱點（已試） | 備註 |
+|------|------------------|------|
+| DEAUTH | OK | 板上主線 |
+| SYN_FLOOD | 部分 | 密度／HIDS |
+| ARP_SPOOF | fail | `gw_flip` 全程 0 |
+| AUTH_FLOOD | weak | `auth_packets` 幾乎平坦 |
+| PROBE_FLOOD | pass | 2026-08-18；未進 `model.h` |
+
+固定 AP 上 ARP/AUTH 需組員重測 → [`docs/HELP.md`](../docs/HELP.md)。
 
 ### 2.2 實驗日怎麼跑（指向 runbook）
 
@@ -225,7 +238,7 @@ python host/train/analyze_and_train.py
 | `NIDS_WIFI_IFACE` / `NIDS_MON_IFACE` | 預設 `wlan0` / `wlan0mon` |
 | `NIDS_LABEL_HOST` / `NIDS_LABEL_PORT` | 覆寫 label 目標；未設則讀 `live_state`（後備常為 `192.168.124.1:9999`） |
 | `NIDS_HOSTONLY_IP` | Kali host-only CIDR（`prepare_wifi`；子網與範例不同時必改） |
-| `NIDS_SSID` | 熱點名稱（需與 `net_config.h` 一致） |
+| `NIDS_SSID` | **AP／熱點名稱**（需與 `net_config.h` 一致；Kali 必 export） |
 
 ---
 
@@ -255,7 +268,7 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 
 - **勿 commit：** 試收 `data/raw|windows`（基線除外）、`live_state.json`、`build/`、`sdkconfig`、帳密
 - `model.h` 由訓練腳本產生；PR 時說明用哪份資料集訓練
-- 組員：`git pull` 後可用已追蹤的 Phase A windows 直接 train；新場次仍自行收
+- 組員：`git pull` 後 `chmod +x host/attacks/*.sh scripts/*.sh`；AP 煙測任務 → [`docs/HELP.md`](../docs/HELP.md)
 
 ---
 

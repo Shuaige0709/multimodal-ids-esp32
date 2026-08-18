@@ -237,7 +237,7 @@ ensure_label_path() {
 
   echo "[netconfig] ERROR: label host ${host} unreachable from Kali." >&2
   echo "[netconfig]   Collector must listen on that IP:9999 (Mode P → Pi eth0)." >&2
-  echo "[netconfig]   Fix: nids-sync / export NIDS_LABEL_HOST=10.0.0.2" >&2
+  echo "[netconfig]   Fix: ./scripts/nids-sync.sh  or  export NIDS_LABEL_HOST=10.0.0.2" >&2
   echo "[netconfig]   Fix: sudo ip route replace 10.0.0.0/24 via ${gw} dev ${iface}" >&2
   echo "[netconfig]   Fix: ping ${host} from Kali before attacking." >&2
   return 1
