@@ -45,7 +45,6 @@ scripts/              session_windows.ps1, nids-sync.sh, print_live_targets.*
 docs/                 HELP.md (teammate tasks), reports
 data/                 captures (mostly local); Phase A baseline in Git — see data/README.md
 note/                 note.md + lab_runbook.md
-archive/              old duplicates / secrets (do not push logins)
 ```
 
 ## Quick examples
@@ -119,4 +118,4 @@ chmod +x host/attacks/*.sh scripts/*.sh
 
 - Datasets: trial captures stay local; Phase A baseline in Git → `data/README.md`
 - Team notes: `note/lab_runbook.md`, `note/note.md`, teammate AP tasks → **`docs/HELP.md`**
-- Do not commit `sdkconfig`, `build/`, trial CSVs, or secrets under `archive/` / `note/private/`
+- Do not commit `sdkconfig`, `build/`, trial CSVs, or `note/private/`

@@ -148,7 +148,6 @@ scripts/
 
 data/                      多數本機；Phase A 基線 CSV 進 Git（見 `data/README.md`）
 docs/                      筆記、bib、圖、計畫 PDF
-archive/                   舊雙份腳本、帳密（勿 push login）
 note/                      note.md + lab_runbook.md
 ```
 

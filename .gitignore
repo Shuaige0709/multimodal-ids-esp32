@@ -58,12 +58,6 @@ note/.github_token
 # Personal packing lists / home checklist — not for teammates
 note/private/
 
-# --- Archive: keep only README pointers, not old code / secrets ---
-archive/**
-!archive/README.md
-!archive/duplicates/
-!archive/duplicates/README.md
-
 # --- ESP-IDF build (everyone generates locally) ---
 **/build/
 build/
@@ -109,5 +103,5 @@ env/
 *.code-workspace
 
 # --- Optional: large report binaries (prefer Drive) ---
-docs/*.md
+docs/*report*.md
 # docs/**/*.pdf
