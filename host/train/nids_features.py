@@ -11,18 +11,23 @@ Do not reorder without regenerating model.h and reflashing.
 """
 
 # Full multimodal feature set for one 100 ms tumbling window (non-overlapping).
+# Names and order are frozen for the 08.09 nids-counts tree (do not add/reorder).
 # total_packets / packet_density MUST match on-device nids_window_features_t.
 # Raw syslog is thinned (every N packets); firmware emits win_pkts / win_dens
-# so aggregate_windows can prefer those over CSV row counts. Legacy CSVs without
-# win_* fall back to row counts (offline != on-device; see density contract).
+# so aggregate_windows can prefer those over CSV row counts.
+# Firmware also emits win_deauth / win_probe / win_beacon / win_auth (same 100 ms
+# window as win_pkts). aggregate_windows fills the EXISTING subtype columns from
+# those counters; this is a collector/aggregate contract, not a new model.h field.
+# Legacy CSVs without win_* fall back to row / subtype counts
+# (offline != on-device; see density contract).
 WINDOW_FEATURES = [
     "total_packets",    # packets in the window (prefer firmware win_pkts)
     "packet_density",   # lambda; prefer firmware win_dens
-    "beacon_packets",   # 802.11 beacon count
-    "deauth_packets",   # deauth + disassoc count
+    "beacon_packets",   # 802.11 beacon count (prefer firmware win_beacon)
+    "deauth_packets",   # deauth + disassoc count (prefer firmware win_deauth)
     "deauth_targeted",  # P0 WIDS: deauth/disassoc aimed at us or broadcast
-    "probe_packets",    # probe req/resp count
-    "auth_packets",     # auth frames (EAP / auth proxy)
+    "probe_packets",    # probe req/resp count (prefer firmware win_probe)
+    "auth_packets",     # auth frames (prefer firmware win_auth)
     "seq_jump",         # P0 WIDS: sequence-number jumps in the window
     "rssi_mean",        # mean RSSI over the window
     "rssi_var",         # population variance of RSSI
@@ -84,6 +89,8 @@ WINDOW_START_COL = "window_start"
 
 # Phase A acceptance defaults (override via check_dataset_balance.py CLI).
 REQUIRED_ATTACK_TYPES = ("DEAUTH", "SYN_FLOOD", "ARP_SPOOF")
+# Matched-load with visible probe instead of hotspot-invisible ARP.
+PROBE_MATCHED_ATTACK_TYPES = ("DEAUTH", "SYN_FLOOD", "PROBE_FLOOD")
 # Phase C optional fourth type (enable via check_dataset_balance.py --with-auth).
 PHASE_C_ATTACK_TYPES = ("AUTH_FLOOD",)
 MIN_NORMAL_WINDOWS = 200

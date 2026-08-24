@@ -48,6 +48,10 @@ SD_RE = re.compile(
     r"(?: thr=\"(?P<thr>[^\"]+)\")?"
     r"(?: gw_mac=\"(?P<gw_mac>[^\"]+)\")?"
     r"(?: gw_flip=\"(?P<gw_flip>[^\"]+)\")?"
+    r"(?: win_deauth=\"(?P<win_deauth>[^\"]+)\")?"
+    r"(?: win_probe=\"(?P<win_probe>[^\"]+)\")?"
+    r"(?: win_beacon=\"(?P<win_beacon>[^\"]+)\")?"
+    r"(?: win_auth=\"(?P<win_auth>[^\"]+)\")?"
     r"\]"
 )
 
@@ -55,7 +59,9 @@ HEADER = [
     "timestamp", "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped", "host_mac",
     "pred_attack", "pred_raw", "calib", "calib_thr", "deauth_tgt", "seq_jump",
-    "ap_bssid", "channel", "win_pkts", "win_dens", "gw_mac", "gw_flip", "raw",
+    "ap_bssid", "channel", "win_pkts", "win_dens",
+    "win_deauth", "win_probe", "win_beacon", "win_auth",
+    "gw_mac", "gw_flip", "raw",
 ]
 
 
@@ -139,6 +145,8 @@ def main():
                         sd.get("pred"), sd.get("calib"), sd.get("thr"),
                         sd.get("deauth_tgt"), sd.get("seq_jump"), sd.get("ap_bssid"),
                         sd.get("channel"), sd.get("win_pkts"), sd.get("win_dens"),
+                        sd.get("win_deauth"), sd.get("win_probe"),
+                        sd.get("win_beacon"), sd.get("win_auth"),
                         sd.get("gw_mac"), sd.get("gw_flip"), line,
                     ])
                 else:

@@ -32,12 +32,16 @@ To rebuild windows from raw:
 python host/train/aggregate_windows.py data/raw/nids_dataset_20260805_003226.csv
 ```
 
-## Density contract (win_pkts / win_dens)
+## Density / subtype contract (`win_*`)
 
-Firmware syslog may include `win_pkts` / `win_dens` (on-device 100 ms window totals).  
-Collector writes them to raw CSV; `aggregate_windows.py` prefers them for
-`total_packets` / `packet_density`. Older captures without those fields still
-aggregate via CSV row count and print a WARN (thinned syslog ≠ air).
+Firmware syslog may include `win_pkts` / `win_dens` (on-device 100 ms window totals)
+and `win_deauth` / `win_probe` / `win_beacon` / `win_auth` (same window, same
+semantics). Collector writes them to raw CSV. `aggregate_windows.py` prefers them
+for `total_packets` / `packet_density` and for the existing subtype columns
+(`deauth_packets`, `probe_packets`, `beacon_packets`, `auth_packets`). Older
+captures without those fields still aggregate via CSV row / subtype counts and
+print a WARN (thinned syslog ≠ air). Do **not** add new `WINDOW_FEATURES` names
+for these counters — they fill the existing 17-column contract.
 
 ## New captures (not the baseline)
 

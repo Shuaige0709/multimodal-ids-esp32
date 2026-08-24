@@ -12,7 +12,9 @@ model see identical features.
 
 When raw rows include firmware win_pkts / win_dens, total_packets and
 packet_density prefer those values (syslog is thinned; CSV row count != air).
-Legacy captures without those columns keep counting CSV rows and warn.
+When win_deauth / win_probe / win_beacon / win_auth are present, they fill
+the existing subtype columns (same max-in-bin rule). Legacy captures without
+those columns keep counting CSV subtype strings and warn.
 
 Dependencies: standard library + numpy only (no pandas), to keep the pipeline
 easy to reproduce on any machine.
@@ -57,11 +59,25 @@ def _majority_attack(values):
     return Counter(vals).most_common(1)[0][0]
 
 
-def aggregate_rows(rows, window_sec, density_source_stats=None):
+def _fw_max_int(group, key):
+    """Max firmware counter in the bin, or None if the column is absent/empty."""
+    vals = []
+    for r in group:
+        raw = r.get(key)
+        if raw not in (None, ""):
+            vals.append(_to_float(raw))
+    if not vals:
+        return None
+    return int(max(vals))
+
+
+def aggregate_rows(rows, window_sec, density_source_stats=None, subtype_source_stats=None):
     """Group per-packet rows into fixed windows and compute canonical features.
 
     Prefer firmware-emitted win_pkts / win_dens (same source as on-device
     nids_predict) when present; fall back to counting CSV rows (syslog-thinned).
+    Prefer win_deauth / win_probe / win_beacon / win_auth for existing subtype
+    columns; fall back to counting CSV subtype strings on old captures.
     """
     windows = OrderedDict()  # bin_index -> list of rows
     for r in rows:
@@ -117,10 +133,40 @@ def aggregate_rows(rows, window_sec, density_source_stats=None):
         snr = snr_all[rf_ok]
         subs = [(r.get("subtype") or "").strip() for r in group]
 
-        beacon = sum(1 for s in subs if s == "BEACON")
-        deauth = sum(1 for s in subs if s in ("DEAUTH", "DISASSOC"))
-        probe = sum(1 for s in subs if s.startswith("PROBE"))
-        auth = sum(1 for s in subs if s == "AUTH")
+        csv_beacon = sum(1 for s in subs if s == "BEACON")
+        csv_deauth = sum(1 for s in subs if s in ("DEAUTH", "DISASSOC"))
+        csv_probe = sum(1 for s in subs if s.startswith("PROBE"))
+        csv_auth = sum(1 for s in subs if s == "AUTH")
+
+        fw_deauth = _fw_max_int(group, "win_deauth")
+        fw_probe = _fw_max_int(group, "win_probe")
+        fw_beacon = _fw_max_int(group, "win_beacon")
+        fw_auth = _fw_max_int(group, "win_auth")
+        # Any win_* subtype present means this capture has the firmware contract.
+        used_fw_sub = False
+        if fw_deauth is not None:
+            deauth = fw_deauth
+            used_fw_sub = True
+        else:
+            deauth = csv_deauth
+        if fw_probe is not None:
+            probe = fw_probe
+            used_fw_sub = True
+        else:
+            probe = csv_probe
+        if fw_beacon is not None:
+            beacon = fw_beacon
+            used_fw_sub = True
+        else:
+            beacon = csv_beacon
+        if fw_auth is not None:
+            auth = fw_auth
+            used_fw_sub = True
+        else:
+            auth = csv_auth
+        if subtype_source_stats is not None:
+            bucket = "firmware" if used_fw_sub else "csv_rows"
+            subtype_source_stats[bucket] = subtype_source_stats.get(bucket, 0) + 1
         # P0 WIDS: prefer firmware-emitted flags; fall back to 0 on old CSVs
         deauth_tgt = sum(1 for r in group if int(_to_float(r.get("deauth_tgt"))) > 0)
         seq_jump = sum(1 for r in group if int(_to_float(r.get("seq_jump"))) > 0)
@@ -185,6 +231,7 @@ def main():
     window_sec = args.window_ms / 1000.0
     all_windows = []
     density_stats = {"firmware": 0, "csv_rows": 0}
+    subtype_stats = {"firmware": 0, "csv_rows": 0}
     for path in inputs:
         try:
             with open(path, newline="", encoding="utf-8") as fh:
@@ -198,7 +245,11 @@ def main():
         has_win = "win_pkts" in rows[0] and any(
             (r.get("win_pkts") not in (None, "")) for r in rows[:200]
         )
-        w = aggregate_rows(rows, window_sec, density_source_stats=density_stats)
+        w = aggregate_rows(
+            rows, window_sec,
+            density_source_stats=density_stats,
+            subtype_source_stats=subtype_stats,
+        )
         src = "firmware win_pkts" if has_win else "CSV row count (legacy)"
         print(f"  {os.path.basename(path)}: {len(rows)} packets -> {len(w)} windows [{src}]")
         all_windows.extend(w)
@@ -216,6 +267,17 @@ def main():
         print(
             f"  density source: firmware={density_stats['firmware']} windows, "
             f"legacy CSV fallback={density_stats['csv_rows']} windows"
+        )
+    if subtype_stats["firmware"] == 0 and subtype_stats["csv_rows"] > 0:
+        print(
+            "  WARN: no win_deauth/probe/beacon/auth in input — subtype columns "
+            "from thinned CSV strings (offline != on-device). Flash firmware that "
+            "emits those win_* fields for a correct subtype contract."
+        )
+    elif subtype_stats["firmware"] > 0:
+        print(
+            f"  subtype source: firmware={subtype_stats['firmware']} windows, "
+            f"legacy CSV fallback={subtype_stats['csv_rows']} windows"
         )
 
     out_path = args.out

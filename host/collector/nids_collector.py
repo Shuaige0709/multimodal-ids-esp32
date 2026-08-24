@@ -66,6 +66,10 @@ regex = re.compile(
     r'(?: thr="(?P<thr>[^"]+)")?'
     r'(?: gw_mac="(?P<gw_mac>[^"]+)")?'
     r'(?: gw_flip="(?P<gw_flip>[^"]+)")?'
+    r'(?: win_deauth="(?P<win_deauth>[^"]+)")?'
+    r'(?: win_probe="(?P<win_probe>[^"]+)")?'
+    r'(?: win_beacon="(?P<win_beacon>[^"]+)")?'
+    r'(?: win_auth="(?P<win_auth>[^"]+)")?'
     r'\]'
 )
 
@@ -73,7 +77,9 @@ _META_KEYS = (
     "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped",
     "host_mac", "attack", "deauth_tgt", "seq_jump", "ap_bssid", "channel",
-    "win_pkts", "win_dens", "pred", "calib", "thr",
+    "win_pkts", "win_dens",
+    "win_deauth", "win_probe", "win_beacon", "win_auth",
+    "pred", "calib", "thr",
     "gw_mac", "gw_flip",
 )
 _KV_RE = re.compile(r'([a-z_]+)="([^"]*)"')
@@ -93,7 +99,9 @@ def parse_syslog_meta(log_line):
     if pen_m:
         pairs["pen"] = pen_m.group(1)
     str_keys = ("subtype", "host_mac", "attack", "ap_bssid", "channel",
-                "win_pkts", "win_dens", "pred", "calib", "thr",
+                "win_pkts", "win_dens",
+                "win_deauth", "win_probe", "win_beacon", "win_auth",
+                "pred", "calib", "thr",
                 "gw_mac", "gw_flip")
     for key in _META_KEYS:
         pairs.setdefault(key, "" if key in str_keys else "0")
@@ -375,6 +383,7 @@ def start_receiver():
             "host_mac", "pred_attack", "pred_raw", "calib", "calib_thr",
             "deauth_tgt", "seq_jump",
             "ap_bssid", "channel", "win_pkts", "win_dens",
+            "win_deauth", "win_probe", "win_beacon", "win_auth",
             "gw_mac", "gw_flip",
             "label", "attack_type", "timestamp"
         ])
@@ -409,7 +418,7 @@ def start_receiver():
                     if truncated and total_count < 3:
                         print(color_text(
                             f"   ⚠️  truncated syslog ({len(data)}B) from {addr[0]} — "
-                            f"flash firmware with 512B buffer for full fields",
+                            f"flash firmware with SYSLOG_MSG_MAX>=640 for full fields",
                             YELLOW))
 
                     # Record the ESP32's live IP/MAC/AP for attack scripts.
@@ -470,6 +479,8 @@ def start_receiver():
                         d.get("deauth_tgt", "0"), d.get("seq_jump", "0"),
                         d.get("ap_bssid", ""), d.get("channel", ""),
                         d.get("win_pkts", ""), d.get("win_dens", ""),
+                        d.get("win_deauth", ""), d.get("win_probe", ""),
+                        d.get("win_beacon", ""), d.get("win_auth", ""),
                         d.get("gw_mac", ""), d.get("gw_flip", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
@@ -485,6 +496,8 @@ def start_receiver():
 
                     wp = d.get("win_pkts") or "-"
                     wd = d.get("win_dens") or "-"
+                    wda = d.get("win_deauth") or "-"
+                    wpr = d.get("win_probe") or "-"
                     cal = d.get("calib") or "-"
                     pr = d.get("pred") or "-"
                     ga = d.get("attack") or "-"
@@ -494,7 +507,8 @@ def start_receiver():
                         f"{status_indicator} [{gen_time.strftime('%H:%M:%S.%f')[:-3]}] (Recv: {log_time.strftime('%H:%M:%S.%f')[:-3]}) "
                         f"RSSI={d['rssi']:>4}dBm, SNR={d['snr']:>3}dB, "
                         f"IPAT={d['ipat']:>6}us, HEAP={d['heap']:>6}B, "
-                        f"win={wp}/{wd} gw={gwm} flip={gwf} calib={cal} pred={pr}/{ga} | Type: {packet_attack_type}"
+                        f"win={wp}/{wd} deauth={wda} probe={wpr} "
+                        f"gw={gwm} flip={gwf} calib={cal} pred={pr}/{ga} | Type: {packet_attack_type}"
                     )
 
 

@@ -1,0 +1,354 @@
+[
+  {
+    "path": "nids_dataset_20260818_234622.csv",
+    "n_syslog": 26810,
+    "span_s": 1669.302623,
+    "has_pred_raw": true,
+    "has_win_subtype": false,
+    "columns_note": "pred_raw present; subtype flag from CSV strings",
+    "events": [
+      {
+        "i": 0,
+        "attack_type": "DEAUTH",
+        "duration_s": 33.964,
+        "n_syslog": 217,
+        "detected_pred": true,
+        "delay_pred_s": 0.945,
+        "detected_pred_raw": true,
+        "delay_pred_raw_s": 0.945,
+        "detected_gated": true,
+        "delay_gated_s": 0.945
+      },
+      {
+        "i": 1,
+        "attack_type": "DEAUTH",
+        "duration_s": 34.0,
+        "n_syslog": 219,
+        "detected_pred": true,
+        "delay_pred_s": 1.162,
+        "detected_pred_raw": true,
+        "delay_pred_raw_s": 1.162,
+        "detected_gated": true,
+        "delay_gated_s": 1.162
+      },
+      {
+        "i": 2,
+        "attack_type": "DEAUTH",
+        "duration_s": 33.366,
+        "n_syslog": 217,
+        "detected_pred": true,
+        "delay_pred_s": 0.611,
+        "detected_pred_raw": true,
+        "delay_pred_raw_s": 0.611,
+        "detected_gated": true,
+        "delay_gated_s": 0.611
+      },
+      {
+        "i": 3,
+        "attack_type": "PROBE_FLOOD",
+        "duration_s": 121.044815,
+        "n_syslog": 1325,
+        "detected_pred": true,
+        "delay_pred_s": 0.592,
+        "detected_pred_raw": true,
+        "delay_pred_raw_s": 0.326,
+        "detected_gated": true,
+        "delay_gated_s": 0.592
+      },
+      {
+        "i": 4,
+        "attack_type": "SYN_FLOOD",
+        "duration_s": 121.959318,
+        "n_syslog": 8583,
+        "detected_pred": true,
+        "delay_pred_s": 3.732833,
+        "detected_pred_raw": true,
+        "delay_pred_raw_s": 1.055,
+        "detected_gated": false,
+        "delay_gated_s": null
+      }
+    ],
+    "by_attack": {
+      "DEAUTH": {
+        "n_events": 3,
+        "detected": 3,
+        "detection_rate": 1.0,
+        "delay_s_median": 0.945,
+        "delay_s_mean": 0.906,
+        "missed": [],
+        "gated_detected": 3,
+        "gated_detection_rate": 1.0
+      },
+      "PROBE_FLOOD": {
+        "n_events": 1,
+        "detected": 1,
+        "detection_rate": 1.0,
+        "delay_s_median": 0.592,
+        "delay_s_mean": 0.592,
+        "missed": [],
+        "gated_detected": 1,
+        "gated_detection_rate": 1.0
+      },
+      "SYN_FLOOD": {
+        "n_events": 1,
+        "detected": 1,
+        "detection_rate": 1.0,
+        "delay_s_median": 3.732833,
+        "delay_s_mean": 3.732833,
+        "missed": [],
+        "gated_detected": 0,
+        "gated_detection_rate": 0.0
+      }
+    },
+    "fa_per_hour": {
+      "none_all": {
+        "pred": {
+          "n_windows": 3606,
+          "hours": 0.10016666666666667,
+          "alarms": 669,
+          "rising_edges": 125,
+          "fa_per_hour": 6678.868552412646,
+          "fa_events_per_hour": 1247.920133111481,
+          "window_rate": 0.18552412645590682
+        },
+        "pred_raw": {
+          "n_windows": 3606,
+          "hours": 0.10016666666666667,
+          "alarms": 847,
+          "rising_edges": 322,
+          "fa_per_hour": 8455.906821963394,
+          "fa_events_per_hour": 3214.6422628951746,
+          "window_rate": 0.2348863006100943
+        },
+        "gated": {
+          "n_windows": 3606,
+          "hours": 0.10016666666666667,
+          "alarms": 17,
+          "rising_edges": 16,
+          "fa_per_hour": 169.7171381031614,
+          "fa_events_per_hour": 159.73377703826955,
+          "window_rate": 0.004714364947310039
+        }
+      },
+      "none_quiet_win_pkts_lt_50": {
+        "pred": {
+          "n_windows": 1475,
+          "hours": 0.04097222222222222,
+          "alarms": 23,
+          "rising_edges": 11,
+          "fa_per_hour": 561.3559322033898,
+          "fa_events_per_hour": 268.47457627118644,
+          "window_rate": 0.015593220338983051
+        },
+        "pred_raw": {
+          "n_windows": 1475,
+          "hours": 0.04097222222222222,
+          "alarms": 36,
+          "rising_edges": 19,
+          "fa_per_hour": 878.6440677966102,
+          "fa_events_per_hour": 463.728813559322,
+          "window_rate": 0.02440677966101695
+        },
+        "gated": {
+          "n_windows": 1475,
+          "hours": 0.04097222222222222,
+          "alarms": 1,
+          "rising_edges": 1,
+          "fa_per_hour": 24.406779661016948,
+          "fa_events_per_hour": 24.406779661016948,
+          "window_rate": 0.0006779661016949153
+        }
+      }
+    },
+    "evidence_gate": {
+      "rule": "keep pred only if same 100 ms bin has deauth or probe flag; table only, board tree unchanged",
+      "slices": [
+        {
+          "slice": "NONE quiet",
+          "n_windows": 1475,
+          "pred": 0.015593220338983051,
+          "pred_raw": 0.02440677966101695,
+          "gated": 0.0006779661016949153,
+          "gated_raw": 0.0013559322033898306,
+          "mgmt_frac": 0.11796610169491525,
+          "density_only_raw_frac": 0.02305084745762712
+        },
+        {
+          "slice": "NONE busy",
+          "n_windows": 2131,
+          "pred": 0.3031440638198029,
+          "pred_raw": 0.38057250117315816,
+          "gated": 0.007508212106992022,
+          "gated_raw": 0.007508212106992022,
+          "mgmt_frac": 0.018301267010793053,
+          "density_only_raw_frac": 0.3730642890661661
+        },
+        {
+          "slice": "NONE all",
+          "n_windows": 3606,
+          "pred": 0.18552412645590682,
+          "pred_raw": 0.2348863006100943,
+          "gated": 0.004714364947310039,
+          "gated_raw": 0.004991680532445923,
+          "mgmt_frac": 0.05906821963394343,
+          "density_only_raw_frac": 0.22989462007764835
+        },
+        {
+          "slice": "DEAUTH",
+          "n_windows": 622,
+          "pred": 0.9614147909967846,
+          "pred_raw": 0.8938906752411575,
+          "gated": 0.6913183279742765,
+          "gated_raw": 0.6446945337620579,
+          "mgmt_frac": 0.7009646302250804,
+          "density_only_raw_frac": 0.2491961414790997
+        },
+        {
+          "slice": "PROBE_FLOOD",
+          "n_windows": 1152,
+          "pred": 0.9965277777777778,
+          "pred_raw": 0.9982638888888888,
+          "gated": 0.96875,
+          "gated_raw": 0.9704861111111112,
+          "mgmt_frac": 0.9704861111111112,
+          "density_only_raw_frac": 0.027777777777777776
+        },
+        {
+          "slice": "SYN_FLOOD",
+          "n_windows": 1037,
+          "pred": 0.029893924783027964,
+          "pred_raw": 0.15718418514946964,
+          "gated": 0.0,
+          "gated_raw": 0.0019286403085824494,
+          "mgmt_frac": 0.010607521697203472,
+          "density_only_raw_frac": 0.15525554484088716
+        }
+      ]
+    },
+    "header_has_pred_raw_col": true
+  },
+  {
+    "path": "nids_dataset_20260816_015654.csv",
+    "n_syslog": 879,
+    "span_s": 617.9132,
+    "has_pred_raw": false,
+    "has_win_subtype": false,
+    "columns_note": "pred_raw missing; subtype flag from CSV strings",
+    "events": [
+      {
+        "i": 0,
+        "attack_type": "DEAUTH",
+        "duration_s": 33.930622,
+        "n_syslog": 206,
+        "detected_pred": true,
+        "delay_pred_s": 0.66,
+        "detected_pred_raw": null,
+        "delay_pred_raw_s": null,
+        "detected_gated": true,
+        "delay_gated_s": 0.66
+      }
+    ],
+    "by_attack": {
+      "DEAUTH": {
+        "n_events": 1,
+        "detected": 1,
+        "detection_rate": 1.0,
+        "delay_s_median": 0.66,
+        "delay_s_mean": 0.66,
+        "missed": [],
+        "gated_detected": 1,
+        "gated_detection_rate": 1.0
+      }
+    },
+    "fa_per_hour": {
+      "none_all": {
+        "pred": {
+          "n_windows": 657,
+          "hours": 0.018250000000000002,
+          "alarms": 13,
+          "rising_edges": 12,
+          "fa_per_hour": 712.3287671232875,
+          "fa_events_per_hour": 657.5342465753424,
+          "window_rate": 0.0197869101978691
+        },
+        "pred_raw": null,
+        "gated": {
+          "n_windows": 657,
+          "hours": 0.018250000000000002,
+          "alarms": 1,
+          "rising_edges": 1,
+          "fa_per_hour": 54.7945205479452,
+          "fa_events_per_hour": 54.7945205479452,
+          "window_rate": 0.0015220700152207
+        }
+      },
+      "none_quiet_win_pkts_lt_50": {
+        "pred": {
+          "n_windows": 654,
+          "hours": 0.018166666666666668,
+          "alarms": 13,
+          "rising_edges": 12,
+          "fa_per_hour": 715.5963302752293,
+          "fa_events_per_hour": 660.5504587155963,
+          "window_rate": 0.019877675840978593
+        },
+        "pred_raw": null,
+        "gated": {
+          "n_windows": 654,
+          "hours": 0.018166666666666668,
+          "alarms": 1,
+          "rising_edges": 1,
+          "fa_per_hour": 55.04587155963302,
+          "fa_events_per_hour": 55.04587155963302,
+          "window_rate": 0.0015290519877675841
+        }
+      }
+    },
+    "evidence_gate": {
+      "rule": "keep pred only if same 100 ms bin has deauth or probe flag; table only, board tree unchanged",
+      "slices": [
+        {
+          "slice": "NONE quiet",
+          "n_windows": 654,
+          "pred": 0.019877675840978593,
+          "pred_raw": null,
+          "gated": 0.0015290519877675841,
+          "gated_raw": null,
+          "mgmt_frac": 0.0963302752293578,
+          "density_only_raw_frac": null
+        },
+        {
+          "slice": "NONE busy",
+          "n_windows": 3,
+          "pred": 0.0,
+          "pred_raw": null,
+          "gated": 0.0,
+          "gated_raw": null,
+          "mgmt_frac": 0.0,
+          "density_only_raw_frac": null
+        },
+        {
+          "slice": "NONE all",
+          "n_windows": 657,
+          "pred": 0.0197869101978691,
+          "pred_raw": null,
+          "gated": 0.0015220700152207,
+          "gated_raw": null,
+          "mgmt_frac": 0.0958904109589041,
+          "density_only_raw_frac": null
+        },
+        {
+          "slice": "DEAUTH",
+          "n_windows": 199,
+          "pred": 0.9748743718592965,
+          "pred_raw": null,
+          "gated": 0.8140703517587939,
+          "gated_raw": null,
+          "mgmt_frac": 0.8241206030150754,
+          "density_only_raw_frac": null
+        }
+      ]
+    },
+    "header_has_pred_raw_col": false
+  }
+]
