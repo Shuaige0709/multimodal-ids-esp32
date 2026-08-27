@@ -4,8 +4,9 @@
 #
 # NOT mdk4 random beacon flood (that already failed: tot ~1.3×).
 # This clones the lab SSID with ONE rogue BSSID on the victim channel so
-# firmware win_bssid can go 1 → 2. Flash win_bssid firmware first. Not a train
-# baseline. Do not add unique_bssid to model.h tonight.
+# firmware win_twin / win_rogue can lift vs idle (win_bssid unique-count is
+# not enough on a busy hotspot). Flash firmware that emits those fields first.
+# Not a train baseline. Do not add twin/rogue to model.h tonight.
 #
 # Prefers airbase-ng; falls back to mdk4 b -n -a -c (fixed BSSID, modest pps).
 set -euo pipefail

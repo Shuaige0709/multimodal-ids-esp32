@@ -71,6 +71,8 @@ regex = re.compile(
     r'(?: win_beacon="(?P<win_beacon>[^"]+)")?'
     r'(?: win_auth="(?P<win_auth>[^"]+)")?'
     r'(?: win_bssid="(?P<win_bssid>[^"]+)")?'
+    r'(?: win_twin="(?P<win_twin>[^"]+)")?'
+    r'(?: win_rogue="(?P<win_rogue>[^"]+)")?'
     r'\]'
 )
 
@@ -80,6 +82,7 @@ _META_KEYS = (
     "host_mac", "attack", "deauth_tgt", "seq_jump", "ap_bssid", "channel",
     "win_pkts", "win_dens",
     "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
+    "win_twin", "win_rogue",
     "pred", "calib", "thr",
     "gw_mac", "gw_flip",
 )
@@ -102,6 +105,7 @@ def parse_syslog_meta(log_line):
     str_keys = ("subtype", "host_mac", "attack", "ap_bssid", "channel",
                 "win_pkts", "win_dens",
                 "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
+                "win_twin", "win_rogue",
                 "pred", "calib", "thr",
                 "gw_mac", "gw_flip")
     for key in _META_KEYS:
@@ -385,6 +389,7 @@ def start_receiver():
             "deauth_tgt", "seq_jump",
             "ap_bssid", "channel", "win_pkts", "win_dens",
             "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
+            "win_twin", "win_rogue",
             "gw_mac", "gw_flip",
             "label", "attack_type", "timestamp"
         ])
@@ -419,7 +424,7 @@ def start_receiver():
                     if truncated and total_count < 3:
                         print(color_text(
                             f"   ⚠️  truncated syslog ({len(data)}B) from {addr[0]} — "
-                            f"flash firmware with SYSLOG_MSG_MAX>=640 for full fields",
+                            f"flash firmware with SYSLOG_MSG_MAX>=704 for full fields",
                             YELLOW))
 
                     # Record the ESP32's live IP/MAC/AP for attack scripts.
@@ -483,6 +488,7 @@ def start_receiver():
                         d.get("win_deauth", ""), d.get("win_probe", ""),
                         d.get("win_beacon", ""), d.get("win_auth", ""),
                         d.get("win_bssid", ""),
+                        d.get("win_twin", ""), d.get("win_rogue", ""),
                         d.get("gw_mac", ""), d.get("gw_flip", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
@@ -501,6 +507,8 @@ def start_receiver():
                     wda = d.get("win_deauth") or "-"
                     wpr = d.get("win_probe") or "-"
                     wbs = d.get("win_bssid") or "-"
+                    wt = d.get("win_twin") or "-"
+                    wr = d.get("win_rogue") or "-"
                     cal = d.get("calib") or "-"
                     pr = d.get("pred") or "-"
                     ga = d.get("attack") or "-"
@@ -511,6 +519,7 @@ def start_receiver():
                         f"RSSI={d['rssi']:>4}dBm, SNR={d['snr']:>3}dB, "
                         f"IPAT={d['ipat']:>6}us, HEAP={d['heap']:>6}B, "
                         f"win={wp}/{wd} deauth={wda} probe={wpr} bssid={wbs} "
+                        f"twin={wt} rogue={wr} "
                         f"gw={gwm} flip={gwf} calib={cal} pred={pr}/{ga} | Type: {packet_attack_type}"
                     )
 

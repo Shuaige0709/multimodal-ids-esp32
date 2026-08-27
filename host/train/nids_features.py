@@ -15,9 +15,10 @@ Do not reorder without regenerating model.h and reflashing.
 # total_packets / packet_density MUST match on-device nids_window_features_t.
 # Raw syslog is thinned (every N packets); firmware emits win_pkts / win_dens
 # so aggregate_windows can prefer those over CSV row counts.
-# Firmware also emits win_deauth / win_probe / win_beacon / win_auth / win_bssid
-# (same 100 ms window as win_pkts). aggregate_windows fills the EXISTING subtype
-# columns from the first four; unique_bssid is a sidecar (not in model.h).
+# Firmware also emits win_deauth / win_probe / win_beacon / win_auth /
+# win_bssid / win_twin / win_rogue (same 100 ms window as win_pkts).
+# aggregate_windows fills the EXISTING subtype columns from the first four;
+# unique_bssid / twin_bssid / rogue_seen are sidecars (not in model.h).
 # Legacy CSVs without win_* fall back to row / subtype counts
 # (offline != on-device; see density contract).
 WINDOW_FEATURES = [
@@ -48,6 +49,13 @@ HIDS_GW_FEATURES = [
 # Sidecar WIDS: unique BSSIDs in the 100 ms window (syslog win_bssid). Not in model.h.
 UNIQUE_BSSID_FEATURES = [
     "unique_bssid",
+]
+
+# Sidecar WIDS: same-SSID foreign BSSID count (win_twin) and lab rogue MAC bit (win_rogue).
+# Not in model.h. Visibility gate for evil twin; do not train until lift vs idle holds.
+TWIN_SIDECAR_FEATURES = [
+    "twin_bssid",
+    "rogue_seen",
 ]
 
 # Wireless / RF-side features (no host state).
