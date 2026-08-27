@@ -2,7 +2,10 @@
  * nids_calib.h — On-device IDLE baseline + density post-filter + streak.
  *
  * Wraps nids_predict: calibrate local total_packets p90 during benign boot,
- * then veto density-leaf false alarms unless tot > k*p90. Deauth path bypasses.
+ * then (unless evidence-gate) veto density-leaf FAs unless tot > k*p90.
+ * Deauth and probe primitives bypass the tot threshold (streak 1).
+ * Evidence-gate (NIDS_EVIDENCE_GATE_ENABLE): drop density-only tree hits
+ * that have no deauth/probe in the same 100 ms window. model.h unchanged.
  */
 #ifndef NIDS_CALIB_H
 #define NIDS_CALIB_H

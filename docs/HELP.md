@@ -1,3 +1,17 @@
+# 任務索引（組員）
+
+本週大方向如下。
+
+| 誰 | 本週 |
+|----|------|
+| **Winston** | [`HELP_winston_evil_twin.md`](HELP_winston_evil_twin.md) |
+| **HaoHao** | [`HELP_haohao_busy_normal.md`](HELP_haohao_busy_normal.md) |
+
+舊 ARP/AUTH runbook 在本文後半，只留檔。
+
+
+---
+
 # 任務：固定 AP 上確認 ARP / AUTH 可見性
 
 > 給 Winston 的短 runbook。**預設照模式 W（Windows collector，無 Pi）做。**  
@@ -13,7 +27,7 @@
 | SYN_FLOOD | 部分可見 | 偏密度／HIDS |
 | ARP_SPOOF | **不可見** | 空中 LLC 0/0；`gw_flip` 亦 0（隔離／毒不到 STA） |
 | AUTH_FLOOD | **幾乎不可見** | `auth_packets` 幾乎平坦 |
-| PROBE_FLOOD | **可見** | 2026-08-18 煙測過關；尚未進 `model.h` |
+| PROBE_FLOOD | **可見** | 2026-08-18 煙測過關；08.09 板上樹已能亮（未換新 counts） |
 
 **請在固定 AP（非手機熱點）上重試 ARP 與 AUTH。** 若仍不可見，記成 sensor gap，不要硬重訓。
 
@@ -23,7 +37,9 @@
 
 1. **固定 AP**，盡量關 `client isolation` / `AP isolation` / guest isolation。
 2. ESP32、Kali、Collector **都連同一 AP**（SSID／密碼對齊韌體）。
-3. **互 ping 檢查**：Kali 能 ping 到 ESP32 IP（`live_state.json` 的 `esp32_ip`）。不通先修路由／隔離，不要打攻擊。
+3. **兩條路分開查，不要用 monitor 網卡去 ping：**
+   - **ARP（managed）**：Kali `wlan0` 還在 AP 上 → 可 ping ESP32 IP（`live_state.esp32_ip`）。不通先修隔離／路由。
+   - **AUTH / deauth / probe（monitor）**：USB Wi-Fi 進入 monitor 後**沒有 IP**，ping 不到任何人是正常的。Label START/STOP 走 **VMnet1 / eth0 → Windows**（`live_state.label_host`，常見 `192.168.124.1`），不是走 `wlan0mon`。
 4. Collector **先開**，等 syslog 有刷行、且 `data/live_state.json` 有 `esp32_ip` / `label_host`。
 
 ---
@@ -77,7 +93,18 @@ sudo -E ./host/attacks/arpspoof.sh
 
 ### 1.4 任務 B — AUTH_FLOOD
 
-- **介面**：`monitor` (需網卡)
+- **介面**：`monitor`（USB Wi-Fi 注入；**不要**指望這張卡還能 ping）
+- **Label**：仍走 host-only。進 monitor 前先確認：
+
+```bash
+# 在 Windows：ipconfig 看 VMnet1 /「VMware Network Adapter VMnet1」的 IPv4
+# 在 Kali（eth0 還在、wlan 已 monitor 也沒差）：
+ping -c 1 -I eth0 192.168.124.1    # 改成你的 Windows VMnet1 IP
+export NIDS_LABEL_HOST=192.168.124.1
+```
+
+腳本若印 `label host unreachable` 就停：那是 **eth0 / 子網 / export 沒帶進 sudo**，不是 AUTH 做不了。用 `sudo -E`。
+
 - **指令**：
 
 ```bash

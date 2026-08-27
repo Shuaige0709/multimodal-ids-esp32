@@ -52,6 +52,7 @@ SD_RE = re.compile(
     r"(?: win_probe=\"(?P<win_probe>[^\"]+)\")?"
     r"(?: win_beacon=\"(?P<win_beacon>[^\"]+)\")?"
     r"(?: win_auth=\"(?P<win_auth>[^\"]+)\")?"
+    r"(?: win_bssid=\"(?P<win_bssid>[^\"]+)\")?"
     r"\]"
 )
 
@@ -60,7 +61,7 @@ HEADER = [
     "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped", "host_mac",
     "pred_attack", "pred_raw", "calib", "calib_thr", "deauth_tgt", "seq_jump",
     "ap_bssid", "channel", "win_pkts", "win_dens",
-    "win_deauth", "win_probe", "win_beacon", "win_auth",
+    "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
     "gw_mac", "gw_flip", "raw",
 ]
 
@@ -147,6 +148,7 @@ def main():
                         sd.get("channel"), sd.get("win_pkts"), sd.get("win_dens"),
                         sd.get("win_deauth"), sd.get("win_probe"),
                         sd.get("win_beacon"), sd.get("win_auth"),
+                        sd.get("win_bssid"),
                         sd.get("gw_mac"), sd.get("gw_flip"), line,
                     ])
                 else:

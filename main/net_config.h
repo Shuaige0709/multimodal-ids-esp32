@@ -46,10 +46,15 @@
  * On-device IDLE baseline calibration (post-filter; does not change model.h).
  * First NIDS_CALIB_MS after analysis start: learn busy-air p90 of total_packets;
  * then require total_packets > k*p90 for non-deauth attack accepts. Deauth bypasses.
+ * NIDS_EVIDENCE_GATE: density-only tree hits (no deauth/probe in the window) are
+ * dropped even if tot > thr. Probe is a primitive (like deauth), streak 1.
  * Assumption: first ~45s is benign background (no scripted attacks); busy RF is OK.
  */
 #ifndef NIDS_CALIB_ENABLE
 #define NIDS_CALIB_ENABLE 1
+#endif
+#ifndef NIDS_EVIDENCE_GATE_ENABLE
+#define NIDS_EVIDENCE_GATE_ENABLE 1
 #endif
 #ifndef NIDS_CALIB_MS
 #define NIDS_CALIB_MS 45000

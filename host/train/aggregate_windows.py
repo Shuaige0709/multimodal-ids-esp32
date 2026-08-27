@@ -40,7 +40,7 @@ if _ROOT not in sys.path:
 
 from host.paths import DATA_RAW, DATA_WINDOWS, ensure_data_dirs  # noqa: E402
 from host.train.nids_features import (  # noqa: E402
-    WINDOW_FEATURES, HIDS_GW_FEATURES, LABEL_COL, ATTACK_TYPE_COL, WINDOW_START_COL,
+    WINDOW_FEATURES, HIDS_GW_FEATURES, UNIQUE_BSSID_FEATURES, LABEL_COL, ATTACK_TYPE_COL, WINDOW_START_COL,
     rf_sample_valid,
 )
 
@@ -186,6 +186,7 @@ def aggregate_rows(rows, window_sec, density_source_stats=None, subtype_source_s
             "auth_packets": auth,
             "seq_jump": seq_jump,
             "gw_mac_flip": int(_to_float(last.get("gw_flip"))),
+            "unique_bssid": int(_fw_max_int(group, "win_bssid") or 0),
             # RF means use cleaned samples only (dirty → leave 0 / empty-window default)
             "rssi_mean": float(rssi.mean()) if len(rssi) else 0.0,
             "rssi_var": float(rssi.var()) if len(rssi) > 1 else 0.0,
@@ -286,7 +287,7 @@ def main():
         stamp = os.path.basename(inputs[-1]).replace("nids_dataset_", "").replace(".csv", "")
         out_path = os.path.join(DATA_WINDOWS, f"nids_windows_{stamp}.csv")
 
-    cols = [WINDOW_START_COL] + WINDOW_FEATURES + HIDS_GW_FEATURES + [LABEL_COL, ATTACK_TYPE_COL]
+    cols = [WINDOW_START_COL] + WINDOW_FEATURES + HIDS_GW_FEATURES + UNIQUE_BSSID_FEATURES + [LABEL_COL, ATTACK_TYPE_COL]
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=cols)
         writer.writeheader()

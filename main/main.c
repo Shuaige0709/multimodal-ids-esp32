@@ -107,6 +107,7 @@ typedef struct{
     uint32_t len; // packet length
     uint8_t src_mac[6]; // source MAC address (addr2)
     uint8_t dst_mac[6]; // destination MAC address (addr1)
+    uint8_t bssid[6];   // addr3 (BSSID on mgmt/data)
     uint8_t deauth_targeted; // 1 if DEAUTH/DISASSOC to us or broadcast
     uint8_t seq_jump; // 1 if sequence number jumped vs previous frame
     char type_str[8]; // packet type (MGMT, CTRL, DATA, MISC) 
@@ -423,6 +424,11 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
         memset(info.dst_mac, 0, 6);
         memset(info.src_mac, 0, 6);
     }
+    if (info.len >= 22) {
+        memcpy(info.bssid, pkt->payload + 16, 6);
+    } else {
+        memset(info.bssid, 0, 6);
+    }
 
     // 802.11 header
     info.seq_ctrl = (info.len >= 24) ? (((pkt->payload[23] << 8) | pkt->payload[22]) >> 4) : 0; // sequence control field is located at offset 22-23 in the 802.11 header for both management and data frames
@@ -505,7 +511,8 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
 void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap, int64_t uptime_ms,
                     uint32_t win_pkts, double win_density,
                     uint32_t win_deauth, uint32_t win_probe,
-                    uint32_t win_beacon, uint32_t win_auth) {
+                    uint32_t win_beacon, uint32_t win_auth,
+                    uint32_t win_bssid) {
     // 1. produce ISO 8601 timestamp with milliseconds precision
     // Note: Currently we are not synchronizing with NTP, so this timestamp is relative to the device startup time
     struct timeval tv;
@@ -515,9 +522,10 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
     strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", tm_info);
 
     // 2. package the log message in RFC 5424 format
-    // win_pkts / win_dens / win_{deauth,probe,beacon,auth}: on-device 100 ms
+    // win_pkts / win_dens / win_{deauth,probe,beacon,auth,bssid}: on-device 100 ms
     // tumbling-window counters (same source as nids_predict). Subtype win_*
     // align offline aggregate with the board; CSV row subtype counts are thinned.
+    // win_bssid = unique addr3 in the window (cap 8); not a model.h feature.
     int n = snprintf(buf, size,
         "<%d>1 %s.%03ldZ %s %s - - "
         "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" "
@@ -526,7 +534,8 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\" "
         "win_pkts=\"%lu\" win_dens=\"%.1f\" pred=\"%d\" calib=\"%s\" thr=\"%.1f\" "
         "gw_mac=\"%s\" gw_flip=\"%lu\" "
-        "win_deauth=\"%lu\" win_probe=\"%lu\" win_beacon=\"%lu\" win_auth=\"%lu\"]",
+        "win_deauth=\"%lu\" win_probe=\"%lu\" win_beacon=\"%lu\" win_auth=\"%lu\" "
+        "win_bssid=\"%lu\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
@@ -540,7 +549,8 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         (int)last_raw_pred, nids_calib_state_str(), nids_calib_thr_tot(),
         nids_gw_mac_str(), (unsigned long)nids_gw_flip(),
         (unsigned long)win_deauth, (unsigned long)win_probe,
-        (unsigned long)win_beacon, (unsigned long)win_auth);
+        (unsigned long)win_beacon, (unsigned long)win_auth,
+        (unsigned long)win_bssid);
     if (n < 0 || (size_t)n >= size) {
         ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=%u",
                  n, (unsigned)size, (unsigned)SYSLOG_MSG_MAX);
@@ -659,6 +669,38 @@ static void nids_mitigate(const nids_pkt_info_t *info)
 #endif
 }
 
+#define NIDS_WIN_BSSID_CAP 8
+
+static uint8_t s_win_bssids[NIDS_WIN_BSSID_CAP][6];
+static uint8_t s_win_bssid_n;
+
+static int mac_is_zero(const uint8_t *m)
+{
+    return !(m[0] | m[1] | m[2] | m[3] | m[4] | m[5]);
+}
+
+static void win_bssid_reset(void)
+{
+    s_win_bssid_n = 0;
+    memset(s_win_bssids, 0, sizeof(s_win_bssids));
+}
+
+static void win_bssid_note(const uint8_t *mac)
+{
+    if (!mac || mac_is_zero(mac)) {
+        return;
+    }
+    for (uint8_t i = 0; i < s_win_bssid_n; i++) {
+        if (memcmp(s_win_bssids[i], mac, 6) == 0) {
+            return;
+        }
+    }
+    if (s_win_bssid_n < NIDS_WIN_BSSID_CAP) {
+        memcpy(s_win_bssids[s_win_bssid_n], mac, 6);
+        s_win_bssid_n++;
+    }
+}
+
 void nids_analysis_task(void* arg){
     nids_pkt_info_t info;
     char syslog_buffer[SYSLOG_MSG_MAX];
@@ -676,6 +718,7 @@ void nids_analysis_task(void* arg){
     int64_t window_start_us = esp_timer_get_time();
     uint32_t w_total = 0, w_beacon = 0, w_deauth = 0, w_probe = 0, w_auth = 0;
     uint32_t w_deauth_tgt = 0, w_seq_jump = 0;
+    win_bssid_reset();
     int32_t w_rssi_sum = 0, w_snr_sum = 0;
     int64_t w_rssi_sq_sum = 0;
     uint32_t w_rssi_cnt = 0;
@@ -716,6 +759,7 @@ void nids_analysis_task(void* arg){
 
             // ---- 100 ms tumbling window aggregation (feeds on-device inference) ----
             w_total++;
+            win_bssid_note(info.bssid);
             w_rssi_sum += info.rssi;
             w_rssi_sq_sum += (int64_t)info.rssi * info.rssi;
             w_snr_sum += info.snr;
@@ -733,6 +777,7 @@ void nids_analysis_task(void* arg){
             double closed_win_density = 0.0;
             uint32_t closed_win_deauth = 0, closed_win_probe = 0;
             uint32_t closed_win_beacon = 0, closed_win_auth = 0;
+            uint32_t closed_win_bssid = 0;
             bool just_closed_window = false;
             if ((win_now_us - window_start_us) >= WINDOW_US) {
                 double dt = (double)(win_now_us - window_start_us) / 1000000.0;
@@ -743,6 +788,7 @@ void nids_analysis_task(void* arg){
                 closed_win_probe = w_probe;
                 closed_win_beacon = w_beacon;
                 closed_win_auth = w_auth;
+                closed_win_bssid = s_win_bssid_n;
                 just_closed_window = true;
                 double rssi_mean = w_rssi_cnt ? (double)w_rssi_sum / w_rssi_cnt : 0.0;
                 double rssi_var = 0.0;
@@ -805,6 +851,7 @@ void nids_analysis_task(void* arg){
                 w_total = w_beacon = w_deauth = w_probe = w_auth = 0;
                 w_deauth_tgt = w_seq_jump = 0;
                 w_rssi_sum = w_snr_sum = 0; w_rssi_sq_sum = 0; w_rssi_cnt = 0;
+                win_bssid_reset();
             }
             
             // Resolve the collector destination for UDP mode (auto-discovered, else static fallback).
@@ -826,7 +873,7 @@ void nids_analysis_task(void* arg){
                 // Prefer just-closed window totals so syslog matches nids_predict inputs.
                 uint32_t report_pkts;
                 double report_dens;
-                uint32_t report_deauth, report_probe, report_beacon, report_auth;
+                uint32_t report_deauth, report_probe, report_beacon, report_auth, report_bssid;
                 if (just_closed_window) {
                     report_pkts = closed_win_pkts;
                     report_dens = closed_win_density;
@@ -834,6 +881,7 @@ void nids_analysis_task(void* arg){
                     report_probe = closed_win_probe;
                     report_beacon = closed_win_beacon;
                     report_auth = closed_win_auth;
+                    report_bssid = closed_win_bssid;
                 } else {
                     int64_t elapsed_us = esp_timer_get_time() - window_start_us;
                     if (elapsed_us < 1000) {
@@ -845,11 +893,13 @@ void nids_analysis_task(void* arg){
                     report_probe = w_probe;
                     report_beacon = w_beacon;
                     report_auth = w_auth;
+                    report_bssid = s_win_bssid_n;
                 }
                 nids_gw_poll();
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms,
                                report_pkts, report_dens,
-                               report_deauth, report_probe, report_beacon, report_auth);
+                               report_deauth, report_probe, report_beacon, report_auth,
+                               report_bssid);
 
                 if(SYSlOG_MODE == 1){
                     if (wifi_connected && sock >= 0 && udp_ready) {

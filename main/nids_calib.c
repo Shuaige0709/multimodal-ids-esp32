@@ -34,6 +34,10 @@ static const char *TAG = "NIDS_CALIB";
 #define NIDS_CALIB_MIN_SAMPLES 32
 #endif
 
+#ifndef NIDS_EVIDENCE_GATE_ENABLE
+#define NIDS_EVIDENCE_GATE_ENABLE 1
+#endif
+
 static nids_calib_state_t s_state = NIDS_CALIB_DISABLED;
 static int64_t s_calib_start_us = 0;
 static float s_ring[NIDS_CALIB_RING];
@@ -45,6 +49,7 @@ static int s_pos_run = 0;
 static int s_neg_run = 0;
 static int s_latched = 0;
 static int s_logged_arm = 0;
+static unsigned s_density_veto = 0;
 
 static int cmp_float(const void *a, const void *b)
 {
@@ -129,12 +134,12 @@ void nids_calib_reset(void)
 #endif
 }
 
-static int apply_streak(int candidate, int deauth_path)
+static int apply_streak(int candidate, int primitive_path)
 {
     if (candidate) {
         s_neg_run = 0;
         s_pos_run++;
-        int need = deauth_path ? NIDS_CALIB_DEAUTH_STREAK : NIDS_CALIB_STREAK;
+        int need = primitive_path ? NIDS_CALIB_DEAUTH_STREAK : NIDS_CALIB_STREAK;
         if (need < 1) {
             need = 1;
         }
@@ -165,6 +170,8 @@ int nids_calib_on_window(const nids_window_features_t *f, int raw_pred)
     }
 
     const int deauth_path = (f->deauth_packets > 0.5) || (f->deauth_targeted > 0.5);
+    const int probe_path = (f->probe_packets > 0.5);
+    const int primitive_path = deauth_path || probe_path;
 
     if (s_state == NIDS_CALIB_CALIBRATING) {
         if (!deauth_path) {
@@ -185,14 +192,27 @@ int nids_calib_on_window(const nids_window_features_t *f, int raw_pred)
     int candidate = 0;
     if (deauth_path) {
         candidate = (raw_pred != 0);
+    } else if (probe_path) {
+        /* Probe is a WIDS primitive (08.09 tree often uses tot/dens leaf). */
+        candidate = (raw_pred != 0);
     } else if (raw_pred == 0) {
         candidate = 0;
     } else {
-        /* Density / other leaf: require relative excess over local IDLE baseline */
+#if NIDS_EVIDENCE_GATE_ENABLE
+        /* Density leaf with no deauth/probe: do not light (busy/SYN). */
+        candidate = 0;
+        s_density_veto++;
+        if ((s_density_veto % 50u) == 1u) {
+            ESP_LOGW(TAG,
+                     "evidence-gate veto density-only pred (n=%u tot=%.0f thr=%.1f probe=%.0f)",
+                     s_density_veto, f->total_packets, s_thr, f->probe_packets);
+        }
+#else
         candidate = (f->total_packets > s_thr) ? 1 : 0;
+#endif
     }
 
-    return apply_streak(candidate, deauth_path);
+    return apply_streak(candidate, primitive_path);
 #endif
 }
 

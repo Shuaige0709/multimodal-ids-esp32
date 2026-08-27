@@ -15,9 +15,9 @@ Do not reorder without regenerating model.h and reflashing.
 # total_packets / packet_density MUST match on-device nids_window_features_t.
 # Raw syslog is thinned (every N packets); firmware emits win_pkts / win_dens
 # so aggregate_windows can prefer those over CSV row counts.
-# Firmware also emits win_deauth / win_probe / win_beacon / win_auth (same 100 ms
-# window as win_pkts). aggregate_windows fills the EXISTING subtype columns from
-# those counters; this is a collector/aggregate contract, not a new model.h field.
+# Firmware also emits win_deauth / win_probe / win_beacon / win_auth / win_bssid
+# (same 100 ms window as win_pkts). aggregate_windows fills the EXISTING subtype
+# columns from the first four; unique_bssid is a sidecar (not in model.h).
 # Legacy CSVs without win_* fall back to row / subtype counts
 # (offline != on-device; see density contract).
 WINDOW_FEATURES = [
@@ -43,6 +43,11 @@ WINDOW_FEATURES = [
 # Sidecar HIDS: gateway MAC flips (syslog gw_flip). NOT in model.h until smoke passes.
 HIDS_GW_FEATURES = [
     "gw_mac_flip",
+]
+
+# Sidecar WIDS: unique BSSIDs in the 100 ms window (syslog win_bssid). Not in model.h.
+UNIQUE_BSSID_FEATURES = [
+    "unique_bssid",
 ]
 
 # Wireless / RF-side features (no host state).
