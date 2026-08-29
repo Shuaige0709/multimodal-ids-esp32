@@ -383,14 +383,13 @@ def to_markdown(reports):
     lines = [
         "# Event-level eval on existing labeled captures",
         "",
-        "> Private. Date: 2026-08-24.  ",
+        "> Private. Date: 2026-08-28.  ",
         "> Script: `host/train/event_level_eval.py`. Board tree **unchanged**.  ",
         "> Delay = seconds from START (`attack_type` leaves NONE) to first `pred_attack=1`.  ",
         "> FA/hour uses last syslog in each 100 ms bin. Quiet = NONE and `win_pkts` < 50.  ",
-        "> Evidence-gate is offline only: keep an alarm iff the same bin has deauth or probe.",
-        "",
-        "These captures **predate** firmware `win_deauth/probe/beacon/auth`; subtype flags",
-        "here are CSV strings (thinned). After the 15 min contract smoke, re-run this script.",
+        "> Evidence-gate table: keep an alarm iff the same bin has deauth or probe.  ",
+        "> On `20260827_010524` the board already flashes that gate (`pred_attack`);  ",
+        "> older CSVs are offline replay only.",
         "",
     ]
     for rep in reports:

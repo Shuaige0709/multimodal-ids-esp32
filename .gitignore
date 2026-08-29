@@ -14,6 +14,7 @@ Desktop.ini
 *.swp
 *.swo
 *.bak
+main/model.h.bak*
 *.tmp
 *.user
 *.workspace
@@ -104,4 +105,14 @@ env/
 
 # --- Optional: large report binaries (prefer Drive) ---
 docs/*report*.md
-# docs/**/*.pdf
+docs/*report*.pdf
+
+# Local one-shot eval dumps / leftover scripts (0809 locked figures stay tracked)
+docs/figures/event_level_*.json
+docs/figures/leftover_*.json
+docs/figures/teammate_*.json
+docs/figures/dual_expert_20260818*.json
+docs/figures/eval_metrics_nids_counts_20260818.json
+host/train/leftover_*.py
+host/train/window_ms_contrast.py
+host/train/teammate_fixed_ap_visibility.py
