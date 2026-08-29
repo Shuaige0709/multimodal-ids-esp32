@@ -1,0 +1,4 @@
+{
+  "name": "ESP32 Multimodal NIDS",
+  "install": "bash .cursor/install.sh"
+}
