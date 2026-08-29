@@ -236,10 +236,12 @@ ensure_label_path() {
   fi
 
   echo "[netconfig] ERROR: label host ${host} unreachable from Kali." >&2
-  echo "[netconfig]   Collector must listen on that IP:9999 (Mode P → Pi eth0)." >&2
-  echo "[netconfig]   Fix: ./scripts/nids-sync.sh  or  export NIDS_LABEL_HOST=10.0.0.2" >&2
+  echo "[netconfig]   Label is OOB (host-only ${iface}), NOT the monitor Wi-Fi NIC." >&2
+  echo "[netconfig]   Monitor mode cannot ping anyone on wlan0/wlan0mon — that is expected." >&2
+  echo "[netconfig]   Mode W: export NIDS_LABEL_HOST=<Windows VMnet1 IP>  then sudo -E" >&2
+  echo "[netconfig]   Mode P: ./scripts/nids-sync.sh  or  export NIDS_LABEL_HOST=10.0.0.2" >&2
+  echo "[netconfig]   Fix: ping -c 1 -I ${iface} ${host}" >&2
   echo "[netconfig]   Fix: sudo ip route replace 10.0.0.0/24 via ${gw} dev ${iface}" >&2
-  echo "[netconfig]   Fix: ping ${host} from Kali before attacking." >&2
   return 1
 }
 

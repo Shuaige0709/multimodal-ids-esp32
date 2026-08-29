@@ -4,7 +4,7 @@
 
 | 誰 | 本週 |
 |----|------|
-| **Winston** | [`HELP_winston_idle_fa.md`](HELP_winston_idle_fa.md)（長 IDLE 誤報 + iperf busy；evil twin 已過關） |
+| **Winston** | [`HELP_winston_idle_fa.md`](HELP_winston_idle_fa.md)（長 IDLE、iperf busy、分檔 SYN） |
 | **HaoHao** | [`HELP_haohao_busy_normal.md`](HELP_haohao_busy_normal.md) |
 
 舊 ARP/AUTH runbook 在本文後半，只留檔。
