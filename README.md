@@ -4,7 +4,8 @@ Edge multimodal NIDS on ESP32 (100 ms windows + on-device tree).
 **Attacks: shell only. Collector / train: Python.**
 
 **Winston 任務：** [`docs/HELP.md`](docs/HELP.md)  
-**實驗日步驟：** [`note/lab_runbook.md`](note/lab_runbook.md)
+**實驗日步驟：** [`note/lab_runbook.md`](note/lab_runbook.md)  
+**進度簡報：** [`docs/0809report.md`](docs/0809report.md)（08.13）· [`docs/0820report.md`](docs/0820report.md)（08.20）
 
 ## Who runs what (no twins)
 

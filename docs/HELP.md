@@ -4,7 +4,7 @@
 
 | 誰 | 本週 |
 |----|------|
-| **Winston** | [`HELP_winston_idle_fa.md`](HELP_winston_idle_fa.md)（長 IDLE、iperf busy、分檔 SYN） |
+| **Winston** | [`HELP_winston_next.md`](HELP_winston_next.md)（固定 AP normal baseline；不要重錄 ARP/AUTH） |
 | **HaoHao** | [`HELP_haohao_busy_normal.md`](HELP_haohao_busy_normal.md) |
 
 舊 ARP/AUTH runbook 在本文後半，只留檔。
@@ -12,9 +12,10 @@
 
 ---
 
-# 任務：固定 AP 上確認 ARP / AUTH 可見性
+# 舊任務留檔：固定 AP 上確認 ARP / AUTH 可見性
 
-> 給 Winston 的短 runbook。**預設照模式 W（Windows collector，無 Pi）做。**  
+> 已有 Winston 固定 AP 結果，**本週不要照這段重錄 ARP/AUTH**。新任務看上方 `HELP_winston_next.md`。  
+> 原本給 Winston 的短 runbook。**預設照模式 W（Windows collector，無 Pi）做。**  
 > 完整實驗拓撲見 [`note/lab_runbook.md`](../note/lab_runbook.md)、架構見 [`note/note.md`](../note/note.md)。
 
 ## 背景（請先讀）
