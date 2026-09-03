@@ -40,7 +40,7 @@ if _ROOT not in sys.path:
 
 from host.paths import DATA_RAW, DATA_WINDOWS, ensure_data_dirs  # noqa: E402
 from host.train.nids_features import (  # noqa: E402
-    WINDOW_FEATURES, HIDS_GW_FEATURES, UNIQUE_BSSID_FEATURES, TWIN_SIDECAR_FEATURES,
+    WINDOW_FEATURES, SIDECAR_OUTPUT_FEATURES,
     LABEL_COL, ATTACK_TYPE_COL, WINDOW_START_COL,
     rf_sample_valid,
 )
@@ -70,6 +70,22 @@ def _fw_max_int(group, key):
     if not vals:
         return None
     return int(max(vals))
+
+
+def _fw_avg_int(group, key):
+    """Mean firmware counter in the bin, or None if absent/empty."""
+    vals = []
+    for r in group:
+        raw = r.get(key)
+        if raw not in (None, ""):
+            vals.append(_to_float(raw))
+    if not vals:
+        return None
+    return int(round(sum(vals) / len(vals)))
+
+
+def _ratio(num, den):
+    return float(num) / max(float(den), 1.0)
 
 
 def aggregate_rows(rows, window_sec, density_source_stats=None, subtype_source_stats=None):
@@ -168,6 +184,27 @@ def aggregate_rows(rows, window_sec, density_source_stats=None, subtype_source_s
         if subtype_source_stats is not None:
             bucket = "firmware" if used_fw_sub else "csv_rows"
             subtype_source_stats[bucket] = subtype_source_stats.get(bucket, 0) + 1
+
+        csv_mgmt = csv_beacon + csv_deauth + csv_probe + csv_auth + sum(
+            1 for s in subs if s in ("MGMT_OTHER", "DISASSOC")
+        )
+        fw_mgmt = _fw_max_int(group, "win_mgmt")
+        fw_data = _fw_max_int(group, "win_data")
+        fw_ctrl = _fw_max_int(group, "win_ctrl")
+        fw_bytes = _fw_max_int(group, "win_bytes")
+        fw_len_max = _fw_max_int(group, "win_len_max")
+        fw_len_mean = _fw_avg_int(group, "win_len_mean")
+        fw_mgmt_bytes = _fw_max_int(group, "win_mgmt_bytes")
+        fw_data_bytes = _fw_max_int(group, "win_data_bytes")
+        mgmt_packets = fw_mgmt if fw_mgmt is not None else csv_mgmt
+        data_packets = fw_data if fw_data is not None else 0
+        ctrl_packets = fw_ctrl if fw_ctrl is not None else 0
+        win_bytes = fw_bytes if fw_bytes is not None else 0
+        len_max = fw_len_max if fw_len_max is not None else 0
+        len_mean = fw_len_mean if fw_len_mean is not None else 0
+        mgmt_bytes = fw_mgmt_bytes if fw_mgmt_bytes is not None else 0
+        data_bytes = fw_data_bytes if fw_data_bytes is not None else 0
+
         # P0 WIDS: prefer firmware-emitted flags; fall back to 0 on old CSVs
         deauth_tgt = sum(1 for r in group if int(_to_float(r.get("deauth_tgt"))) > 0)
         seq_jump = sum(1 for r in group if int(_to_float(r.get("seq_jump"))) > 0)
@@ -190,6 +227,23 @@ def aggregate_rows(rows, window_sec, density_source_stats=None, subtype_source_s
             "unique_bssid": int(_fw_max_int(group, "win_bssid") or 0),
             "twin_bssid": int(_fw_max_int(group, "win_twin") or 0),
             "rogue_seen": int(_fw_max_int(group, "win_rogue") or 0),
+            "mgmt_packets": mgmt_packets,
+            "data_packets": data_packets,
+            "ctrl_packets": ctrl_packets,
+            "win_bytes": win_bytes,
+            "len_mean": len_mean,
+            "len_max": len_max,
+            "mgmt_bytes": mgmt_bytes,
+            "data_bytes": data_bytes,
+            "mgmt_ratio": _ratio(mgmt_packets, total),
+            "data_ratio": _ratio(data_packets, total),
+            "ctrl_ratio": _ratio(ctrl_packets, total),
+            "bytes_per_pkt": _ratio(win_bytes, total),
+            "mgmt_bytes_ratio": _ratio(mgmt_bytes, win_bytes),
+            "beacon_ratio": _ratio(beacon, total),
+            "deauth_ratio": _ratio(deauth, total),
+            "probe_ratio": _ratio(probe, total),
+            "auth_ratio": _ratio(auth, total),
             # RF means use cleaned samples only (dirty → leave 0 / empty-window default)
             "rssi_mean": float(rssi.mean()) if len(rssi) else 0.0,
             "rssi_var": float(rssi.var()) if len(rssi) > 1 else 0.0,
@@ -290,7 +344,7 @@ def main():
         stamp = os.path.basename(inputs[-1]).replace("nids_dataset_", "").replace(".csv", "")
         out_path = os.path.join(DATA_WINDOWS, f"nids_windows_{stamp}.csv")
 
-    cols = [WINDOW_START_COL] + WINDOW_FEATURES + HIDS_GW_FEATURES + UNIQUE_BSSID_FEATURES + TWIN_SIDECAR_FEATURES + [LABEL_COL, ATTACK_TYPE_COL]
+    cols = [WINDOW_START_COL] + WINDOW_FEATURES + SIDECAR_OUTPUT_FEATURES + [LABEL_COL, ATTACK_TYPE_COL]
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=cols)
         writer.writeheader()

@@ -73,6 +73,14 @@ regex = re.compile(
     r'(?: win_bssid="(?P<win_bssid>[^"]+)")?'
     r'(?: win_twin="(?P<win_twin>[^"]+)")?'
     r'(?: win_rogue="(?P<win_rogue>[^"]+)")?'
+    r'(?: win_mgmt="(?P<win_mgmt>[^"]+)")?'
+    r'(?: win_data="(?P<win_data>[^"]+)")?'
+    r'(?: win_ctrl="(?P<win_ctrl>[^"]+)")?'
+    r'(?: win_bytes="(?P<win_bytes>[^"]+)")?'
+    r'(?: win_len_mean="(?P<win_len_mean>[^"]+)")?'
+    r'(?: win_len_max="(?P<win_len_max>[^"]+)")?'
+    r'(?: win_mgmt_bytes="(?P<win_mgmt_bytes>[^"]+)")?'
+    r'(?: win_data_bytes="(?P<win_data_bytes>[^"]+)")?'
     r'\]'
 )
 
@@ -83,6 +91,8 @@ _META_KEYS = (
     "win_pkts", "win_dens",
     "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
     "win_twin", "win_rogue",
+    "win_mgmt", "win_data", "win_ctrl", "win_bytes",
+    "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
     "pred", "calib", "thr",
     "gw_mac", "gw_flip",
 )
@@ -106,6 +116,8 @@ def parse_syslog_meta(log_line):
                 "win_pkts", "win_dens",
                 "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
                 "win_twin", "win_rogue",
+                "win_mgmt", "win_data", "win_ctrl", "win_bytes",
+                "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
                 "pred", "calib", "thr",
                 "gw_mac", "gw_flip")
     for key in _META_KEYS:
@@ -390,6 +402,8 @@ def start_receiver():
             "ap_bssid", "channel", "win_pkts", "win_dens",
             "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
             "win_twin", "win_rogue",
+            "win_mgmt", "win_data", "win_ctrl", "win_bytes",
+            "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
             "gw_mac", "gw_flip",
             "label", "attack_type", "timestamp"
         ])
@@ -424,7 +438,7 @@ def start_receiver():
                     if truncated and total_count < 3:
                         print(color_text(
                             f"   ⚠️  truncated syslog ({len(data)}B) from {addr[0]} — "
-                            f"flash firmware with SYSLOG_MSG_MAX>=704 for full fields",
+                            f"flash firmware with SYSLOG_MSG_MAX>=896 for full fields",
                             YELLOW))
 
                     # Record the ESP32's live IP/MAC/AP for attack scripts.
@@ -489,6 +503,10 @@ def start_receiver():
                         d.get("win_beacon", ""), d.get("win_auth", ""),
                         d.get("win_bssid", ""),
                         d.get("win_twin", ""), d.get("win_rogue", ""),
+                        d.get("win_mgmt", ""), d.get("win_data", ""), d.get("win_ctrl", ""),
+                        d.get("win_bytes", ""),
+                        d.get("win_len_mean", ""), d.get("win_len_max", ""),
+                        d.get("win_mgmt_bytes", ""), d.get("win_data_bytes", ""),
                         d.get("gw_mac", ""), d.get("gw_flip", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])

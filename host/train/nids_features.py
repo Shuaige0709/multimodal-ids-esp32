@@ -58,6 +58,41 @@ TWIN_SIDECAR_FEATURES = [
     "rogue_seen",
 ]
 
+# Frame-composition sidecars (syslog win_mgmt / win_data / win_ctrl / win_bytes / len_*).
+# Offline / ablation only — NOT in model.h until Step 4 promotion.
+FRAME_COMPOSITION_SIDECAR_FEATURES = [
+    "mgmt_packets",
+    "data_packets",
+    "ctrl_packets",
+    "win_bytes",
+    "len_mean",
+    "len_max",
+    "mgmt_bytes",
+    "data_bytes",
+]
+
+# Derived ratios from window totals (aggregate_windows.py). Sidecar only.
+DERIVED_RATIO_SIDECAR_FEATURES = [
+    "mgmt_ratio",
+    "data_ratio",
+    "ctrl_ratio",
+    "bytes_per_pkt",
+    "mgmt_bytes_ratio",
+    "beacon_ratio",
+    "deauth_ratio",
+    "probe_ratio",
+    "auth_ratio",
+]
+
+# All sidecar columns emitted by aggregate_windows (excludes WINDOW_FEATURES / model.h).
+SIDECAR_OUTPUT_FEATURES = (
+    HIDS_GW_FEATURES
+    + UNIQUE_BSSID_FEATURES
+    + TWIN_SIDECAR_FEATURES
+    + FRAME_COMPOSITION_SIDECAR_FEATURES
+    + DERIVED_RATIO_SIDECAR_FEATURES
+)
+
 # Wireless / RF-side features (no host state).
 NIDS_ONLY_FEATURES = [
     "total_packets", "packet_density",

@@ -59,7 +59,7 @@ static const uint32_t SEND_RECOVER_THRESHOLD = 10;
  * so busy lines truncated; do not go back to 256×640 (overflowed dram0_0_seg). */
 static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 200 : 128;
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
-#define SYSLOG_MSG_MAX 704
+#define SYSLOG_MSG_MAX 896
 
 static char syslog_backlog[200][SYSLOG_MSG_MAX];
 static uint32_t syslog_backlog_head = 0;
@@ -574,7 +574,10 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
                     uint32_t win_pkts, double win_density,
                     uint32_t win_deauth, uint32_t win_probe,
                     uint32_t win_beacon, uint32_t win_auth,
-                    uint32_t win_bssid, uint32_t win_twin, uint32_t win_rogue) {
+                    uint32_t win_bssid, uint32_t win_twin, uint32_t win_rogue,
+                    uint32_t win_mgmt, uint32_t win_data, uint32_t win_ctrl,
+                    uint32_t win_bytes, uint32_t win_len_mean, uint32_t win_len_max,
+                    uint32_t win_mgmt_bytes, uint32_t win_data_bytes) {
     // 1. produce ISO 8601 timestamp with milliseconds precision
     // Note: Currently we are not synchronizing with NTP, so this timestamp is relative to the device startup time
     struct timeval tv;
@@ -589,7 +592,7 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
     // aggregate with the board; CSV row subtype counts are thinned.
     // win_bssid = unique addr3 (cap 8). win_twin = unique BSSIDs advertising
     // our SSID that are not the associated AP. win_rogue = lab MAC 02:13:37:00:00:01.
-    // None of these are model.h features.
+    // win_{mgmt,data,ctrl,bytes,len_*} are frame-composition sidecars (not model.h).
     int n = snprintf(buf, size,
         "<%d>1 %s.%03ldZ %s %s - - "
         "[meta@%s subtype=\"%s\" rssi=\"%d\" snr=\"%d\" ipat=\"%lu\" seq=\"%u\" "
@@ -599,7 +602,10 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         "win_pkts=\"%lu\" win_dens=\"%.1f\" pred=\"%d\" calib=\"%s\" thr=\"%.1f\" "
         "gw_mac=\"%s\" gw_flip=\"%lu\" "
         "win_deauth=\"%lu\" win_probe=\"%lu\" win_beacon=\"%lu\" win_auth=\"%lu\" "
-        "win_bssid=\"%lu\" win_twin=\"%lu\" win_rogue=\"%lu\"]",
+        "win_bssid=\"%lu\" win_twin=\"%lu\" win_rogue=\"%lu\" "
+        "win_mgmt=\"%lu\" win_data=\"%lu\" win_ctrl=\"%lu\" win_bytes=\"%lu\" "
+        "win_len_mean=\"%lu\" win_len_max=\"%lu\" "
+        "win_mgmt_bytes=\"%lu\" win_data_bytes=\"%lu\"]",
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
@@ -614,7 +620,10 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         nids_gw_mac_str(), (unsigned long)nids_gw_flip(),
         (unsigned long)win_deauth, (unsigned long)win_probe,
         (unsigned long)win_beacon, (unsigned long)win_auth,
-        (unsigned long)win_bssid, (unsigned long)win_twin, (unsigned long)win_rogue);
+        (unsigned long)win_bssid, (unsigned long)win_twin, (unsigned long)win_rogue,
+        (unsigned long)win_mgmt, (unsigned long)win_data, (unsigned long)win_ctrl,
+        (unsigned long)win_bytes, (unsigned long)win_len_mean, (unsigned long)win_len_max,
+        (unsigned long)win_mgmt_bytes, (unsigned long)win_data_bytes);
     if (n < 0 || (size_t)n >= size) {
         ESP_LOGW(TAG2, "syslog truncated (need %d, buf %u) — rebuild/flash with SYSLOG_MSG_MAX>=%u",
                  n, (unsigned)size, (unsigned)SYSLOG_MSG_MAX);
@@ -820,6 +829,10 @@ void nids_analysis_task(void* arg){
     const int64_t WINDOW_US = 100000; // 100 ms
     int64_t window_start_us = esp_timer_get_time();
     uint32_t w_total = 0, w_beacon = 0, w_deauth = 0, w_probe = 0, w_auth = 0;
+    uint32_t w_mgmt = 0, w_data = 0, w_ctrl = 0;
+    uint32_t w_bytes = 0, w_mgmt_bytes = 0, w_data_bytes = 0;
+    uint32_t w_len_max = 0;
+    uint64_t w_len_sum = 0;
     uint32_t w_deauth_tgt = 0, w_seq_jump = 0;
     win_bssid_reset();
     int32_t w_rssi_sum = 0, w_snr_sum = 0;
@@ -864,6 +877,20 @@ void nids_analysis_task(void* arg){
             w_total++;
             win_bssid_note(info.bssid);
             win_identity_note(&info);
+            if (strcmp(info.type_str, "MGMT") == 0) {
+                w_mgmt++;
+                w_mgmt_bytes += info.len;
+            } else if (strcmp(info.type_str, "DATA") == 0) {
+                w_data++;
+                w_data_bytes += info.len;
+            } else if (strcmp(info.type_str, "CTRL") == 0) {
+                w_ctrl++;
+            }
+            w_bytes += info.len;
+            w_len_sum += info.len;
+            if (info.len > w_len_max) {
+                w_len_max = info.len;
+            }
             w_rssi_sum += info.rssi;
             w_rssi_sq_sum += (int64_t)info.rssi * info.rssi;
             w_snr_sum += info.snr;
@@ -882,6 +909,9 @@ void nids_analysis_task(void* arg){
             uint32_t closed_win_deauth = 0, closed_win_probe = 0;
             uint32_t closed_win_beacon = 0, closed_win_auth = 0;
             uint32_t closed_win_bssid = 0, closed_win_twin = 0, closed_win_rogue = 0;
+            uint32_t closed_win_mgmt = 0, closed_win_data = 0, closed_win_ctrl = 0;
+            uint32_t closed_win_bytes = 0, closed_win_len_mean = 0, closed_win_len_max = 0;
+            uint32_t closed_win_mgmt_bytes = 0, closed_win_data_bytes = 0;
             bool just_closed_window = false;
             if ((win_now_us - window_start_us) >= WINDOW_US) {
                 double dt = (double)(win_now_us - window_start_us) / 1000000.0;
@@ -895,6 +925,14 @@ void nids_analysis_task(void* arg){
                 closed_win_bssid = s_win_bssid_n;
                 closed_win_twin = s_win_twin_n;
                 closed_win_rogue = s_win_rogue;
+                closed_win_mgmt = w_mgmt;
+                closed_win_data = w_data;
+                closed_win_ctrl = w_ctrl;
+                closed_win_bytes = w_bytes;
+                closed_win_len_max = w_len_max;
+                closed_win_len_mean = w_total ? (uint32_t)((w_len_sum + w_total / 2) / w_total) : 0;
+                closed_win_mgmt_bytes = w_mgmt_bytes;
+                closed_win_data_bytes = w_data_bytes;
                 just_closed_window = true;
                 double rssi_mean = w_rssi_cnt ? (double)w_rssi_sum / w_rssi_cnt : 0.0;
                 double rssi_var = 0.0;
@@ -955,6 +993,10 @@ void nids_analysis_task(void* arg){
                 // reset accumulator for next window
                 window_start_us = win_now_us;
                 w_total = w_beacon = w_deauth = w_probe = w_auth = 0;
+                w_mgmt = w_data = w_ctrl = 0;
+                w_bytes = w_mgmt_bytes = w_data_bytes = 0;
+                w_len_max = 0;
+                w_len_sum = 0;
                 w_deauth_tgt = w_seq_jump = 0;
                 w_rssi_sum = w_snr_sum = 0; w_rssi_sq_sum = 0; w_rssi_cnt = 0;
                 win_bssid_reset();
@@ -981,6 +1023,9 @@ void nids_analysis_task(void* arg){
                 double report_dens;
                 uint32_t report_deauth, report_probe, report_beacon, report_auth;
                 uint32_t report_bssid, report_twin, report_rogue;
+                uint32_t report_mgmt, report_data, report_ctrl;
+                uint32_t report_bytes, report_len_mean, report_len_max;
+                uint32_t report_mgmt_bytes, report_data_bytes;
                 if (just_closed_window) {
                     report_pkts = closed_win_pkts;
                     report_dens = closed_win_density;
@@ -991,6 +1036,14 @@ void nids_analysis_task(void* arg){
                     report_bssid = closed_win_bssid;
                     report_twin = closed_win_twin;
                     report_rogue = closed_win_rogue;
+                    report_mgmt = closed_win_mgmt;
+                    report_data = closed_win_data;
+                    report_ctrl = closed_win_ctrl;
+                    report_bytes = closed_win_bytes;
+                    report_len_mean = closed_win_len_mean;
+                    report_len_max = closed_win_len_max;
+                    report_mgmt_bytes = closed_win_mgmt_bytes;
+                    report_data_bytes = closed_win_data_bytes;
                 } else {
                     int64_t elapsed_us = esp_timer_get_time() - window_start_us;
                     if (elapsed_us < 1000) {
@@ -1005,12 +1058,23 @@ void nids_analysis_task(void* arg){
                     report_bssid = s_win_bssid_n;
                     report_twin = s_win_twin_n;
                     report_rogue = s_win_rogue;
+                    report_mgmt = w_mgmt;
+                    report_data = w_data;
+                    report_ctrl = w_ctrl;
+                    report_bytes = w_bytes;
+                    report_len_max = w_len_max;
+                    report_len_mean = w_total ? (uint32_t)((w_len_sum + w_total / 2) / w_total) : 0;
+                    report_mgmt_bytes = w_mgmt_bytes;
+                    report_data_bytes = w_data_bytes;
                 }
                 nids_gw_poll();
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms,
                                report_pkts, report_dens,
                                report_deauth, report_probe, report_beacon, report_auth,
-                               report_bssid, report_twin, report_rogue);
+                               report_bssid, report_twin, report_rogue,
+                               report_mgmt, report_data, report_ctrl,
+                               report_bytes, report_len_mean, report_len_max,
+                               report_mgmt_bytes, report_data_bytes);
 
                 if(SYSlOG_MODE == 1){
                     if (wifi_connected && sock >= 0 && udp_ready) {

@@ -40,10 +40,19 @@ semantics). Collector writes them to raw CSV. `aggregate_windows.py` prefers the
 for `total_packets` / `packet_density` and for the existing subtype columns
 (`deauth_packets`, `probe_packets`, `beacon_packets`, `auth_packets`). Sidecar
 `win_bssid` / `win_twin` / `win_rogue` aggregate as `unique_bssid` / `twin_bssid` /
-`rogue_seen` (not `WINDOW_FEATURES` / `model.h`). Older
-captures without those fields still aggregate via CSV row / subtype counts and
+`rogue_seen` (not `WINDOW_FEATURES` / `model.h`).
+
+**Frame-composition sidecars** (2026-09-03+, syslog only until ablation):
+
+`win_mgmt` / `win_data` / `win_ctrl` / `win_bytes` / `win_len_mean` /
+`win_len_max` / `win_mgmt_bytes` / `win_data_bytes` → raw CSV columns.
+`aggregate_windows.py` maps them to `mgmt_packets`, `data_packets`, … and
+derived ratios (`mgmt_ratio`, `data_ratio`, `bytes_per_pkt`, subtype ratios).
+These are **sidecar / offline ablation only** — not in `model.h` until promoted.
+
+Older captures without those fields still aggregate via CSV row / subtype counts and
 print a WARN (thinned syslog ≠ air). Do **not** add new `WINDOW_FEATURES` names
-for these counters — they fill the existing 17-column contract.
+for sidecar counters — they stay outside the 17-column model contract.
 
 ## New captures (not the baseline)
 

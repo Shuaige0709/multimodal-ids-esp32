@@ -55,6 +55,14 @@ SD_RE = re.compile(
     r"(?: win_bssid=\"(?P<win_bssid>[^\"]+)\")?"
     r"(?: win_twin=\"(?P<win_twin>[^\"]+)\")?"
     r"(?: win_rogue=\"(?P<win_rogue>[^\"]+)\")?"
+    r"(?: win_mgmt=\"(?P<win_mgmt>[^\"]+)\")?"
+    r"(?: win_data=\"(?P<win_data>[^\"]+)\")?"
+    r"(?: win_ctrl=\"(?P<win_ctrl>[^\"]+)\")?"
+    r"(?: win_bytes=\"(?P<win_bytes>[^\"]+)\")?"
+    r"(?: win_len_mean=\"(?P<win_len_mean>[^\"]+)\")?"
+    r"(?: win_len_max=\"(?P<win_len_max>[^\"]+)\")?"
+    r"(?: win_mgmt_bytes=\"(?P<win_mgmt_bytes>[^\"]+)\")?"
+    r"(?: win_data_bytes=\"(?P<win_data_bytes>[^\"]+)\")?"
     r"\]"
 )
 
@@ -65,6 +73,8 @@ HEADER = [
     "ap_bssid", "channel", "win_pkts", "win_dens",
     "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
     "win_twin", "win_rogue",
+    "win_mgmt", "win_data", "win_ctrl", "win_bytes",
+    "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
     "gw_mac", "gw_flip", "raw",
 ]
 
@@ -153,6 +163,10 @@ def main():
                         sd.get("win_beacon"), sd.get("win_auth"),
                         sd.get("win_bssid"),
                         sd.get("win_twin"), sd.get("win_rogue"),
+                        sd.get("win_mgmt"), sd.get("win_data"), sd.get("win_ctrl"),
+                        sd.get("win_bytes"),
+                        sd.get("win_len_mean"), sd.get("win_len_max"),
+                        sd.get("win_mgmt_bytes"), sd.get("win_data_bytes"),
                         sd.get("gw_mac"), sd.get("gw_flip"), line,
                     ])
                 else:
