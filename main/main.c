@@ -4,7 +4,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-#include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -16,8 +15,6 @@
 #include "string.h"
 #include <errno.h>
 
-#include "esp_event.h"
-#include "esp_netif.h"
 #include "oled.h"
 #include "esp_http_server.h"
 #include "driver/uart.h"
@@ -26,6 +23,7 @@
 #include "model.h"        // generated on-device inference model (nids_window_features_t / nids_predict)
 #include "nids_calib.h"   // IDLE baseline post-filter (CALIBRATING → ARMED)
 #include "nids_gw.h"      // STA gateway MAC watch (HIDS sidecar)
+#include "wifi_manager.h"
 
 #define SYSLOG_PRI 14      // Facility: User(1) * 8 + Severity: Info(6)
 #define VERSION "1"
@@ -39,12 +37,6 @@
 static const char *TAG = "NIDS_INIT";
 static const char *TAG2 = "NIDS_SNIFFER";
 
-// Event group to signal when WiFi has obtained an IP
-#define WIFI_CONNECTED_BIT BIT0
-static EventGroupHandle_t wifi_event_group = NULL;
-
-static volatile bool wifi_connected = false;
-static uint32_t wifi_reconnect_count = 0;
 static uint32_t send_interval_packets = 10;
 static uint32_t consecutive_send_failures = 0;
 static uint32_t consecutive_send_successes = 0;
@@ -55,13 +47,13 @@ static const uint32_t SEND_INTERVAL_FAST = DATASET_PROFILE ? 50 : 20;
 static const uint32_t SEND_INTERVAL_SLOW = DATASET_PROFILE ? 100 : 50;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
 static const uint32_t SEND_RECOVER_THRESHOLD = 10;
-/* Backlog DRAM: 200×640 = 128000 < old 256×512. 512B was ~505 used after win_*
- * so busy lines truncated; do not go back to 256×640 (overflowed dram0_0_seg). */
-static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 200 : 128;
+/* Keep this in internal DRAM: 200 × 640 = 128000 bytes.  896-byte rows make
+ * the ESP32 dram0_0_seg overflow at link time. */
+#define SYSLOG_BACKLOG_MAX (DATASET_PROFILE ? 200U : 128U)
+#define SYSLOG_MSG_MAX 640U
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
-#define SYSLOG_MSG_MAX 896
 
-static char syslog_backlog[200][SYSLOG_MSG_MAX];
+static char syslog_backlog[SYSLOG_BACKLOG_MAX][SYSLOG_MSG_MAX];
 static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
@@ -72,17 +64,6 @@ static uint32_t queue_peak_depth = 0;
 static volatile bool collector_discovered = false;
 static volatile uint32_t collector_ip_be = 0;                 // collector IP in network byte order
 static volatile uint16_t collector_log_port = SYSLOG_PORT;    // collector syslog port (learned or default)
-
-// Own STA MAC (filled once Wi-Fi has started), used in syslog + deauth_targeted
-static char sta_mac_str[18] = "00:00:00:00:00:00";
-static uint8_t sta_mac_bytes[6] = {0};
-
-// Associated AP identity for live_state.json (filled on GOT_IP)
-static char ap_bssid_str[18] = "00:00:00:00:00:00";
-static uint8_t ap_bssid_bytes[6] = {0};
-static char ap_ssid[33] = {0};
-static uint8_t ap_ssid_len = 0;
-static uint8_t ap_channel = 0;
 
 // Sequence-jump detector state (P0 WIDS)
 #define SEQ_JUMP_THRESH 64
@@ -120,70 +101,6 @@ typedef struct{
 
 static QueueHandle_t pkt_info_queue = NULL; // queue to store packet info for processing
 static uint32_t last_timestamp = 0; // global variable to store timestamp of the last received packet for calculating inter-arrival time (IPAT)
-
-static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
-{
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        wifi_connected = false;
-        wifi_reconnect_count++;
-        nids_gw_on_disconnect();
-        ESP_LOGW(TAG, "WiFi disconnected; pausing UDP sends and reconnecting");
-        if (wifi_event_group) {
-            xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-        }
-        esp_wifi_connect();
-        return;
-    }
-
-    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        // Log the acquired IP address, netmask and gateway for easy verification
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
-        esp_netif_ip_info_t *ip_info = &event->ip_info;
-        ESP_LOGI(TAG, "WiFi connected; resuming UDP sends");
-        ESP_LOGI(TAG, "Got IP: " IPSTR ", Netmask: " IPSTR ", Gateway: " IPSTR,
-                 IP2STR(&ip_info->ip), IP2STR(&ip_info->netmask), IP2STR(&ip_info->gw));
-        nids_gw_on_got_ip(ip_info->gw.addr);
-
-        /* Cache AP BSSID + channel for live_state / deauth scripts. */
-        {
-            wifi_ap_record_t ap;
-            if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
-                memcpy(ap_bssid_bytes, ap.bssid, 6);
-                snprintf(ap_bssid_str, sizeof(ap_bssid_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-                         ap.bssid[0], ap.bssid[1], ap.bssid[2],
-                         ap.bssid[3], ap.bssid[4], ap.bssid[5]);
-                ap_channel = ap.primary;
-                ap_ssid_len = 0;
-                while (ap_ssid_len < 32 && ap.ssid[ap_ssid_len] != 0) {
-                    ap_ssid[ap_ssid_len] = (char)ap.ssid[ap_ssid_len];
-                    ap_ssid_len++;
-                }
-                ap_ssid[ap_ssid_len] = '\0';
-                if (ap_ssid_len == 0) {
-                    size_t n = strlen(WIFI_SSID);
-                    if (n > 32) {
-                        n = 32;
-                    }
-                    memcpy(ap_ssid, WIFI_SSID, n);
-                    ap_ssid[n] = '\0';
-                    ap_ssid_len = (uint8_t)n;
-                }
-                ESP_LOGI(TAG, "AP BSSID: %s ch=%u ssid=%s", ap_bssid_str, ap_channel, ap_ssid);
-            }
-        }
-
-        /* Lab: disable modem sleep so UDP syslog is more reliable while sniffing. */
-        esp_wifi_set_ps(WIFI_PS_NONE);
-
-        wifi_connected = true;
-        consecutive_send_failures = 0;
-        consecutive_send_successes = 0;
-        send_interval_packets = SEND_INTERVAL_FAST;
-        if (wifi_event_group) {
-            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-        }
-    }
-}
 
 // Resolve the current collector destination.
 // Prefers an auto-discovered collector; optionally falls back to a static IP.
@@ -284,7 +201,7 @@ static void flush_syslog_backlog(int sock, struct sockaddr_in *dest_addr)
     char backlog_message[SYSLOG_MSG_MAX];
     uint32_t flush_budget = SYSLOG_FLUSH_BUDGET;
 
-    while (wifi_connected && flush_budget > 0 && syslog_backlog_pop(backlog_message)) {
+    while (wifi_manager_is_connected() && flush_budget > 0 && syslog_backlog_pop(backlog_message)) {
         if (!send_syslog_udp(sock, dest_addr, backlog_message)) {
             // If forwarding fails again after reconnect, put it back and stop flushing.
             syslog_backlog_push(backlog_message);
@@ -293,7 +210,7 @@ static void flush_syslog_backlog(int sock, struct sockaddr_in *dest_addr)
         flush_budget--;
     }
 
-    if (syslog_backlog_dropped > 0 && wifi_connected) {
+    if (syslog_backlog_dropped > 0 && wifi_manager_is_connected()) {
         ESP_LOGW(TAG2, "Syslog backlog dropped %lu messages while offline", syslog_backlog_dropped);
         syslog_backlog_dropped = 0;
     }
@@ -401,9 +318,9 @@ static uint8_t mgmt_ssid_matches_ours(const uint8_t *payload, uint32_t len)
 {
     const char *want;
     uint8_t nwant;
-    if (ap_ssid_len > 0) {
-        want = ap_ssid;
-        nwant = ap_ssid_len;
+    if (wifi_manager_ap_ssid_len() > 0) {
+        want = wifi_manager_ap_ssid();
+        nwant = wifi_manager_ap_ssid_len();
     } else {
         size_t n = strlen(WIFI_SSID);
         if (n > 32) {
@@ -540,7 +457,7 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
             if (fc_subtype == 10 || fc_subtype == 12) {
                 static const uint8_t bcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
                 if (memcmp(info.dst_mac, bcast, 6) == 0 ||
-                    memcmp(info.dst_mac, sta_mac_bytes, 6) == 0) {
+                    memcmp(info.dst_mac, wifi_manager_sta_mac(), 6) == 0) {
                     info.deauth_targeted = 1;
                 }
             }
@@ -609,12 +526,12 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         SYSLOG_PRI, ts, tv.tv_usec / 1000, HOSTNAME, APP_NAME,
         PEN, info->subtype, info->rssi, info->snr, (unsigned long)info->ipat, info->seq_ctrl,
         (unsigned long)heap, (unsigned long)esp_get_minimum_free_heap_size(),
-        (long long)uptime_ms, (unsigned long)wifi_reconnect_count,
+        (long long)uptime_ms, (unsigned long)wifi_manager_reconnect_count(),
         (unsigned long)queue_peak_depth, (unsigned long)udp_send_failure_total,
         (unsigned long)syslog_backlog_count, (unsigned long)syslog_backlog_dropped,
-        sta_mac_str, attack_detected ? 1 : 0,
+        wifi_manager_sta_mac_str(), attack_detected ? 1 : 0,
         (unsigned)info->deauth_targeted, (unsigned)info->seq_jump,
-        ap_bssid_str, (unsigned)ap_channel,
+        wifi_manager_ap_bssid_str(), (unsigned)wifi_manager_ap_channel(),
         (unsigned long)win_pkts, win_density,
         (int)last_raw_pred, nids_calib_state_str(), nids_calib_thr_tot(),
         nids_gw_mac_str(), (unsigned long)nids_gw_flip(),
@@ -733,7 +650,6 @@ static void nids_mitigate(const nids_pkt_info_t *info)
         last_hips_disconnect_us = now;
         ESP_LOGW(TAG2, "[HIPS] Quarantine: temporary Wi-Fi disconnect (event #%lu)",
                  (unsigned long)mitigation_events_total);
-        wifi_connected = false;
         esp_wifi_disconnect();
         // Reconnect is handled by the existing WIFI_EVENT_STA_DISCONNECTED handler.
     }
@@ -807,8 +723,8 @@ static void win_identity_note(const nids_pkt_info_t *info)
     if (memcmp(info->bssid, k_lab_rogue_bssid, 6) == 0) {
         s_win_rogue = 1;
     }
-    if (info->ssid_ours && !mac_is_zero(ap_bssid_bytes) &&
-        memcmp(info->bssid, ap_bssid_bytes, 6) != 0) {
+    if (info->ssid_ours && !mac_is_zero(wifi_manager_ap_bssid()) &&
+        memcmp(info->bssid, wifi_manager_ap_bssid(), 6) != 0) {
         win_twin_note(info->bssid);
     }
 }
@@ -862,6 +778,11 @@ void nids_analysis_task(void* arg){
 
     while(1){
         if(xQueueReceive(pkt_info_queue, &info, portMAX_DELAY) == pdTRUE){
+            if (wifi_manager_take_connected_event()) {
+                consecutive_send_failures = 0;
+                consecutive_send_successes = 0;
+                send_interval_packets = SEND_INTERVAL_FAST;
+            }
             pkt_count++;
             UBaseType_t queue_depth = uxQueueMessagesWaiting(pkt_info_queue);
             if (queue_depth > queue_peak_depth) {
@@ -956,7 +877,7 @@ void nids_analysis_task(void* arg){
                 f.snr_mean       = w_rssi_cnt ? (double)w_snr_sum / w_rssi_cnt : 0.0;
                 f.heap           = (double)esp_get_free_heap_size();
                 f.minheap        = (double)esp_get_minimum_free_heap_size();
-                f.reconn         = (double)wifi_reconnect_count;
+                f.reconn         = (double)wifi_manager_reconnect_count();
                 f.qpeak          = (double)queue_peak_depth;
                 f.udpfail        = (double)udp_send_failure_total;
                 f.backlog        = (double)syslog_backlog_count;
@@ -1008,7 +929,7 @@ void nids_analysis_task(void* arg){
                 udp_ready = resolve_collector(&dest_addr);
             }
 
-            if (wifi_connected && SYSlOG_MODE == 1 && sock >= 0 && udp_ready) {
+            if (wifi_manager_is_connected() && SYSlOG_MODE == 1 && sock >= 0 && udp_ready) {
                 flush_syslog_backlog(sock, &dest_addr);
             }
 
@@ -1077,7 +998,7 @@ void nids_analysis_task(void* arg){
                                report_mgmt_bytes, report_data_bytes);
 
                 if(SYSlOG_MODE == 1){
-                    if (wifi_connected && sock >= 0 && udp_ready) {
+                    if (wifi_manager_is_connected() && sock >= 0 && udp_ready) {
                         if (!send_syslog_udp(sock, &dest_addr, syslog_buffer)) {
                             syslog_backlog_push(syslog_buffer);
                         }
@@ -1091,7 +1012,7 @@ void nids_analysis_task(void* arg){
                 }
             }
 
-            if (!wifi_connected && pkt_count % 500 == 0) {
+            if (!wifi_manager_is_connected() && pkt_count % 500 == 0) {
                 ESP_LOGW(TAG2, "WiFi down; buffering syslog (backlog=%lu)", syslog_backlog_count);
             } else if (SYSlOG_MODE == 1 && pkt_count % 500 == 0) {
                 if (udp_ready) {
@@ -1129,9 +1050,9 @@ void nids_analysis_task(void* arg){
                     if ((now_ms - last_oled_update_ms) >= OLED_UPDATE_MIN_INTERVAL_MS) {
                         uint8_t current_channel = 11;  // currently fixed at ch 11
                         bool attack_flag = attack_detected; // driven by on-device inference
-                        oled_show_stats(wifi_connected, pkt_count, send_interval_packets, free_heap,
+                        oled_show_stats(wifi_manager_is_connected(), pkt_count, send_interval_packets, free_heap,
                                        last_rssi, last_ipat, stack_mark, current_channel,
-                                       wifi_reconnect_count, queue_depth, attack_flag);
+                                       wifi_manager_reconnect_count(), queue_depth, attack_flag);
                         last_oled_update_ms = now_ms;
                     }
                 }
@@ -1184,69 +1105,15 @@ void app_main(void) {
     // Initialize UART for optional serial syslog output (USB-UART)
     serial_init();
 
-    // init TCP/IP stack
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
+    // Wi-Fi manager owns the TCP/IP stack, events, STA configuration and connection.
+    wifi_manager_init();
 
     // create a queue to store packet info for processing
     pkt_info_queue = xQueueCreate(100, sizeof(nids_pkt_info_t));
     xTaskCreate(nids_analysis_task, "nids_analysis_task", 4096, NULL, 5, NULL);
 
-    // start WiFi driver
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    // ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-
-    // ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL)); // We don't need to connect to any AP, just sniffing
-    // ESP_ERROR_CHECK(esp_wifi_start());
-    
-    // Setting Wi-Fi ssid and password
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASS,
-        },
-    };
-    
-    // must be in station mode to enable promiscuous mode, even if we don't actually connect to an AP
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA)); 
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    // Cache our own STA MAC; used for deauth_targeted + live_state.json.
-    {
-        uint8_t mac[6] = {0};
-        if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
-            memcpy(sta_mac_bytes, mac, 6);
-            snprintf(sta_mac_str, sizeof(sta_mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-                     mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            ESP_LOGI(TAG, "STA MAC: %s", sta_mac_str);
-        }
-    }
-
-    ESP_LOGI(TAG, "Connecting to WiFi...");
-    esp_wifi_connect(); // start connecting...
-    // Wait for IP_EVENT_STA_GOT_IP via event group instead of fixed delay
-    wifi_event_group = xEventGroupCreate();
-    if (wifi_event_group == NULL) {
-        ESP_LOGW(TAG, "Failed to create wifi event group; falling back to fixed delay");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_wifi_set_promiscuous(true);
-    } else {
-        // Wait up to 10 seconds for the IP; if timed out, we still enable promiscuous
-        EventBits_t bits = xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(10000));
-        if (bits & WIFI_CONNECTED_BIT) {
-            ESP_LOGI(TAG, "WiFi got IP (event). Enabling promiscuous mode");
-        } else {
-            ESP_LOGW(TAG, "Timed out waiting for IP; enabling promiscuous mode anyway");
-        }
-        esp_wifi_set_promiscuous(true);
-    }
+    // Wi-Fi must be started before promiscuous capture can be enabled.
+    esp_wifi_set_promiscuous(true);
 
     // Start collector auto-discovery listener (learns collector IP from UDP beacon)
 #if ENABLE_AUTO_DISCOVERY
