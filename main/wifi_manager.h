@@ -4,6 +4,8 @@
 #include <stdint.h>
 
 void wifi_manager_init(void);
+// Optional synchronous AP scan; call only after Wi-Fi initialization.
+void wifi_manager_scan(void);
 bool wifi_manager_is_connected(void);
 bool wifi_manager_take_connected_event(void);
 uint32_t wifi_manager_reconnect_count(void);

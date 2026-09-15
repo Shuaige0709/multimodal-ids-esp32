@@ -9,8 +9,8 @@
 #define NIDS_NET_CONFIG_H
 
 /* --- Wi-Fi credentials (must match the AP / phone hotspot) --- */
-#define WIFI_SSID "302"
-#define WIFI_PASS "88888888"
+#define WIFI_SSID "5F23"
+#define WIFI_PASS "0977357694"
 
 /* --- Collector ports --- */
 #define SYSLOG_PORT 1514        /* UDP port the collector listens on for syslog */
