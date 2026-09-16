@@ -12,6 +12,7 @@ import argparse
 from contextlib import suppress
 from datetime import datetime, timezone
 import importlib
+import json
 from pathlib import Path
 import sqlite3
 import sys
@@ -23,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from host.collector.raw_dataset import DatasetWriter
+from host.collector.raw_labels import LabelReceiver, normalize_label
 
 
 class SerialTransportError(RuntimeError):
@@ -66,18 +68,54 @@ def _print_stats(dataset):
               file=sys.stderr)
 
 
+def publish_live(dataset, args, *, active=True):
+    """Separate raw status file: never reuse legacy live_state.json."""
+    if not args.live_state:
+        return
+    path = Path(args.live_state)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    hello = dataset.latest_hello or {}
+    status = dataset.latest_status or {}
+    ip = args.esp32_ip
+    if "ipv4" in hello:
+        ip = hello.get("ipv4") if (hello.get("connected") and status.get("connected") and
+             time.time_ns() - dataset.latest_hello_ns < 6_000_000_000) else None
+    state = {"mode": "raw", "active": active, "updated_ns": time.time_ns(),
+             "dataset": str(dataset.path.resolve()), "session_id": dataset.session_id,
+             "port": args.port, "baud": args.baud,
+             "esp32_ip": ip,
+             "hello_received_ns": getattr(dataset, "latest_hello_ns", 0),
+             "esp32_mac": hello.get("mac"), "label_host": args.label_advertise or args.label_bind,
+             "control_port": args.label_port, "statistics": dataset.statistics()}
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
 def collect(args, serial_module):
     serial_errors = (serial_module.SerialException, OSError)
     connection = None
+    labels = None
     dataset = DatasetWriter(args.out, port=args.port, baud=args.baud, label=args.label,
                             max_status_age_ms=args.max_status_age_ms)
     last_flush = last_stats = time.monotonic()
     exit_code, end_reason = 0, "completed"
     try:
+        if args.label_port:
+            labels = LabelReceiver(args.label_bind, args.label_port, args.label)
+            print(f"Label listener: {args.label_bind}:{args.label_port} (trusted lab only)")
+            dataset.event("label_listener", f"{args.label_bind}:{args.label_port}")
         print(f"Dataset: {dataset.path.resolve()}\nSession: {dataset.session_id}\n"
               f"Label: {args.label if args.label is not None else 'unknown (NULL)'}\n"
               "Ctrl+C stops and flushes the archive.", flush=True)
+        publish_live(dataset, args)
         while True:
+            if getattr(args, "stop_file", None) and Path(args.stop_file).exists():
+                reason = Path(args.stop_file).read_text(encoding="utf-8").strip()
+                end_reason = "campaign_incomplete" if reason == "campaign_incomplete" else "controller_stop"
+                break
+            if labels is not None:
+                labels.poll(dataset)
             if connection is None:
                 try:
                     connection = open_serial(serial_module, args.port, args.baud)
@@ -113,6 +151,7 @@ def collect(args, serial_module):
                 last_flush = now
             if now - last_stats >= args.stats_interval:
                 _print_stats(dataset)
+                publish_live(dataset, args)
                 last_stats = now
     except KeyboardInterrupt:
         end_reason = "user_interrupt"
@@ -124,6 +163,9 @@ def collect(args, serial_module):
         end_reason = "collector_error"
         raise
     finally:
+        if labels is not None:
+            with suppress(OSError):
+                labels.close()
         try:
             if connection is not None:
                 with suppress(*serial_errors):
@@ -133,6 +175,7 @@ def collect(args, serial_module):
                 _print_stats(dataset)
             finally:
                 dataset.close(end_reason)
+                publish_live(dataset, args, active=False)
     return exit_code
 
 
@@ -145,11 +188,21 @@ def main(argv=None, *, serial_module=None):
     parser.add_argument("--out", help="Raw: NEW output directory; legacy: CSV file")
     parser.add_argument("--standby", action="store_true", help="Retry port errors until Ctrl+C")
     parser.add_argument("--label", help="Constant experiment label; omitted means unknown, not normal")
+    parser.add_argument("--label-port", type=int, default=0,
+                        help="Optional START/STOP UDP port; 0 disables (e.g. 9999)")
+    parser.add_argument("--label-bind", default="127.0.0.1",
+                        help="Default local-only; use a trusted lab interface IP for remote events")
+    parser.add_argument("--label-advertise", help="PC lab IP that a remote label sender can reach")
+    parser.add_argument("--live-state", help="Optional raw live-state JSON path (launcher supplies a default)")
+    parser.add_argument("--esp32-ip", help="Fallback IP for firmware without IPv4 HELLO support")
+    parser.add_argument("--stop-file", help="Controller-owned sentinel path; exit and flush when it exists")
     parser.add_argument("--max-status-age-ms", type=int, default=250,
                         help="Past state older than this is flagged stale in packet_samples")
     parser.add_argument("--stats-interval", type=float, default=5)
     args = parser.parse_args(argv)
     if args.format == "legacy":
+        if args.label_port:
+            parser.error("--label-port is only supported by raw mode")
         if args.label is not None:
             parser.error("--label is supported only by raw mode")
         if Path(args.out or "serial_capture.csv").exists():
@@ -161,6 +214,12 @@ def main(argv=None, *, serial_module=None):
         legacy = importlib.import_module("scripts.serial_collector_legacy")
         return legacy.main(forwarded) or 0
     args.baud = 921600 if args.baud is None else args.baud
+    try:
+        args.label = normalize_label(args.label)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if not 0 <= args.label_port <= 65535:
+        parser.error("label-port must be 0..65535")
     if args.baud <= 0 or args.max_status_age_ms < 0 or args.stats_interval <= 0:
         parser.error("baud/stats-interval must be positive; max-status-age-ms must be nonnegative")
     if args.out is None:
@@ -168,6 +227,10 @@ def main(argv=None, *, serial_module=None):
         args.out = str(ROOT / "captures" / f"{stamp}_{uuid.uuid4().hex[:8]}")
     if Path(args.out).exists():
         parser.error(f"Output already exists; choose a NEW directory: {args.out}")
+    if args.live_state:
+        live_path = Path(args.live_state).resolve()
+        if live_path.suffix.lower() != ".json" or live_path.is_relative_to(Path(args.out).resolve()):
+            parser.error("--live-state must be a .json file OUTSIDE the capture output directory")
     if serial_module is None:
         try:
             serial_module = importlib.import_module("serial")

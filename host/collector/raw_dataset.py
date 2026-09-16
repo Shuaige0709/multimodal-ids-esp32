@@ -37,6 +37,8 @@ class DatasetWriter:
         self.packet_sequences = SequenceTracker()
         self.counts = Counter()
         self.latest_status = None
+        self.latest_hello = None
+        self.latest_hello_ns = 0
         self.offset = 0
         self.closed = False
         self.manifest = {
@@ -191,12 +193,16 @@ class DatasetWriter:
             self.db.execute("INSERT INTO hellos VALUES (?, ?)",
                             (record_id, message.body.decode("utf-8")))
             self.counts["hellos"] += 1
+            self.latest_hello = message.fields
+            self.latest_hello_ns = time.time_ns()
 
     def event(self, name, detail=None):
         self.db.execute("INSERT INTO events(host_time_ns, wire_offset, name, detail) "
                         "VALUES (?, ?, ?, ?)", (time.time_ns(), self.offset, name, detail))
 
     def connection_break(self, reason):
+        self.latest_hello = None
+        self.latest_hello_ns = 0
         self.parser.reset_partial()
         self.event("serial_disconnect", str(reason))
         self.flush()

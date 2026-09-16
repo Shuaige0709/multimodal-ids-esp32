@@ -29,6 +29,8 @@ logs/
 live_state.json
 data/live_state.json
 data/live_state.json.tmp
+data/raw_live_state.json
+data/raw_live_state.json.tmp
 
 # --- Datasets: ignore captures by default; whitelist locked baselines ---
 data/raw/*
@@ -92,6 +94,9 @@ __pycache__/
 dist/
 venv/
 .venv/
+.venv-raw/
+models/
+data/raw_windows*/
 env/
 
 # --- IDE / language servers (local — do not share) ---
@@ -116,3 +121,4 @@ docs/figures/eval_metrics_nids_counts_20260818.json
 host/train/leftover_*.py
 host/train/window_ms_contrast.py
 host/train/teammate_fixed_ap_visibility.py
+data/campaign_*/

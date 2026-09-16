@@ -10,7 +10,7 @@
 # Project root = host/attacks/../..
 _ATTACKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${_ATTACKS_DIR}/../.." && pwd)"
-LIVE_STATE_FILE="${PROJECT_ROOT}/data/live_state.json"
+LIVE_STATE_FILE="${NIDS_LIVE_STATE_FILE:-${PROJECT_ROOT}/data/live_state.json}"
 
 # Ports / Wi-Fi names (LABEL_HOST is resolved lazily — see get_label_host)
 LABEL_PORT="${NIDS_LABEL_PORT:-9999}"
@@ -315,6 +315,13 @@ for _ in range(max(1, repeats)):
     time.sleep(0.2)
 sock.close()
 PY
+}
+
+# Raw collector confirms only after committing the event to SQLite.
+# Legacy send_label remains available to existing scripts.
+send_label_confirmed() {
+  python3 "${PROJECT_ROOT}/scripts/raw_label.py" "$1" \
+    --attack-type "${2:-attack}" --host "$(get_label_host)" --port "$LABEL_PORT"
 }
 
 netconfig_summary() {

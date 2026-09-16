@@ -185,6 +185,18 @@ cmd_monitor() {
 
 cmd_managed() {
   need_root
+  # Opt-in automation path: do not restart NetworkManager or touch host-only IPs.
+  # A saved connection must already exist; never pass passwords through SSH args.
+  if [[ "${NIDS_SCOPED_MANAGED:-0}" == 1 ]]; then
+    iface_exists "$WIFI_IFACE" || { echo "Missing $WIFI_IFACE" >&2; exit 1; }
+    iw dev "$WIFI_IFACE" info | grep -q 'type managed' || {
+      echo "Restore managed mode locally first; refusing global network changes" >&2; exit 1;
+    }
+    nmcli --wait 30 connection up "${NIDS_WIFI_PROFILE:-$SSID}" ifname "$WIFI_IFACE"
+    iw dev "$WIFI_IFACE" link | grep -Fq "SSID: $SSID" || exit 1
+    ip -4 addr show dev "$WIFI_IFACE" | grep -q 'inet ' || exit 1
+    return
+  fi
   echo "[prepare_wifi] restoring managed mode ..."
   if iface_exists "$MON_IFACE"; then
     if [[ "$MON_IFACE" == *mon ]]; then

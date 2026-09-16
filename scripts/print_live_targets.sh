@@ -2,6 +2,9 @@
 # print_live_targets.sh - show live_state.json (for Kali if data/ is shared).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ "${1:-raw}" != "legacy" ]]; then
+  exec "${NIDS_PYTHON:-python3}" "$ROOT/scripts/raw_targets.py"
+fi
 # shellcheck source=../host/attacks/netconfig.sh
 source "${ROOT}/host/attacks/netconfig.sh"
 

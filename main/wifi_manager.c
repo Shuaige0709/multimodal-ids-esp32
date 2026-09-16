@@ -115,6 +115,17 @@ void wifi_manager_init(void)
 }
 
 bool wifi_manager_is_connected(void) { return s_connected; }
+bool wifi_manager_ipv4(char *out, size_t size)
+{
+    if (!out || size < 16) return false;
+    out[0] = '\0';
+    esp_netif_ip_info_t info;
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (!s_connected || !netif || esp_netif_get_ip_info(netif, &info) != ESP_OK ||
+        !info.ip.addr || !s_connected) return false;
+    snprintf(out, size, IPSTR, IP2STR(&info.ip));
+    return true;
+}
 bool wifi_manager_take_connected_event(void)
 {
     // Read and clear atomically, without consuming the persistent connected bit.

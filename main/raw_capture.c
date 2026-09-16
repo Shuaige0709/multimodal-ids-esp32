@@ -229,6 +229,8 @@ static void send_hello(void)
 {
     const esp_app_desc_t *app = esp_app_get_description();
     char hash[65];
+    char ip[16] = "";
+    bool connected = wifi_manager_ipv4(ip, sizeof(ip));
     for (size_t i = 0; i < 32; ++i) snprintf(hash + i * 2, 3, "%02x", app->app_elf_sha256[i]);
     // IDF/build version fields are controlled build identifiers, not user input.
     int len = snprintf((char *)s_decoded + sizeof(raw_wire_header_t), 1024,
@@ -236,11 +238,13 @@ static void send_hello(void)
         "\"elf_sha256\":\"%s\",\"mac\":\"%s\",\"baud\":%u,\"snaplen\":%u,"
         "\"pool_slots\":%u,\"status_period_ms\":%u,\"filter_mask\":%lu,"
         "\"role\":\"sta\",\"http_server\":true,\"inference\":false,"
+        "\"ipv4\":\"%s\",\"connected\":%s,"
         "\"clock\":\"esp_timer_callback_us\",\"rx_timestamp_bits\":32,"
         "\"rx_ctrl_size\":%u,\"reset_reason\":%d,\"fcs\":\"included_per_idf_sig_len\"}",
         app->idf_ver, app->version, hash, wifi_manager_sta_mac_str(), RAW_CAPTURE_BAUD,
         RAW_CAPTURE_SNAPLEN, RAW_CAPTURE_POOL_SLOTS, RAW_CAPTURE_STATUS_MS,
-        (unsigned long)s_filter_mask, (unsigned)sizeof(wifi_pkt_rx_ctrl_t), esp_reset_reason());
+        (unsigned long)s_filter_mask, ip, connected ? "true" : "false",
+        (unsigned)sizeof(wifi_pkt_rx_ctrl_t), esp_reset_reason());
     if (len > 0 && len < 1024) send_record(RAW_KIND_HELLO, 0, esp_timer_get_time(), len);
 }
 

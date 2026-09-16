@@ -2,11 +2,14 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 void wifi_manager_init(void);
 // Optional synchronous AP scan; call only after Wi-Fi initialization.
 void wifi_manager_scan(void);
 bool wifi_manager_is_connected(void);
+// Copy a current IPv4 address; empty output and false while disconnected.
+bool wifi_manager_ipv4(char *out, size_t size);
 bool wifi_manager_take_connected_event(void);
 uint32_t wifi_manager_reconnect_count(void);
 const uint8_t *wifi_manager_sta_mac(void);

@@ -27,4 +27,6 @@ LH="$(get_label_host)"
 echo ">>> Synced: $LIVE"
 echo ">>> Paste on Kali (then use sudo -E for attacks):"
 echo "export NIDS_LABEL_HOST=$LH"
-"${ROOT}/scripts/print_live_targets.sh"
+# This script is explicitly legacy UDP. For raw mode use the printed exports
+# from the collector PC; do not overwrite/reuse legacy live_state.json.
+bash "${ROOT}/scripts/print_live_targets.sh" legacy

@@ -6,6 +6,7 @@
 #   .\scripts\print_live_targets.ps1 -Watch
 
 param(
+    [ValidateSet("raw", "legacy")][string]$Mode = "raw",
     [switch]$Watch,
     [int]$IntervalSec = 2
 )
@@ -14,6 +15,12 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Live = Join-Path $Root "data\live_state.json"
 
 function Show-Targets {
+    if ($Mode -eq "raw") {
+        $RawPython = Join-Path $Root ".venv-raw\Scripts\python.exe"
+        if (-not (Test-Path -LiteralPath $RawPython)) { $RawPython = "python" }
+        & $RawPython "$Root\scripts\raw_targets.py"
+        return ($LASTEXITCODE -eq 0)
+    }
     if (-not (Test-Path $Live)) {
         Write-Host "live_state.json not found: $Live"
         Write-Host "Start the collector first (session_windows.ps1 or nids_collector.py)"
