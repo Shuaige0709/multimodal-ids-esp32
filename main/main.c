@@ -55,13 +55,15 @@ static const uint32_t SEND_INTERVAL_FAST = DATASET_PROFILE ? 50 : 20;
 static const uint32_t SEND_INTERVAL_SLOW = DATASET_PROFILE ? 100 : 50;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
 static const uint32_t SEND_RECOVER_THRESHOLD = 10;
-/* Backlog DRAM: 200×640 = 128000 < old 256×512. 512B was ~505 used after win_*
- * so busy lines truncated; do not go back to 256×640 (overflowed dram0_0_seg). */
-static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? 200 : 128;
+/* Backlog DRAM budget is tight on classic ESP32 (no PSRAM).
+ * 200×896 overflowed dram0_0_seg (~+35 KB). Keep MSG_MAX enough for
+ * frame-composition sidecars, cut rows so total ≈ prior 200×704 budget. */
+#define SYSLOG_MSG_MAX 864
+#define SYSLOG_BACKLOG_CAP 160
+static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? SYSLOG_BACKLOG_CAP : 128;
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
-#define SYSLOG_MSG_MAX 896
 
-static char syslog_backlog[200][SYSLOG_MSG_MAX];
+static char syslog_backlog[SYSLOG_BACKLOG_CAP][SYSLOG_MSG_MAX];
 static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;

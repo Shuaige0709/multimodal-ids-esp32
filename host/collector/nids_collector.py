@@ -438,7 +438,7 @@ def start_receiver():
                     if truncated and total_count < 3:
                         print(color_text(
                             f"   ⚠️  truncated syslog ({len(data)}B) from {addr[0]} — "
-                            f"flash firmware with SYSLOG_MSG_MAX>=896 for full fields",
+                            f"flash firmware with SYSLOG_MSG_MAX>=864 for full fields",
                             YELLOW))
 
                     # Record the ESP32's live IP/MAC/AP for attack scripts.
