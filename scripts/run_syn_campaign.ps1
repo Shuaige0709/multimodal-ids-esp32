@@ -5,6 +5,7 @@ param(
     [string]$KaliProject = '/home/hao/桌面/multimodal-ids-esp32',
     [string]$LabelHost = '192.168.56.1',
     [string]$Ssid = '5F23',
+    [string]$KaliAttackIface = 'eth0',
     [string]$Port = 'COM3',
     [string]$Python,
     [string]$Out,
@@ -19,7 +20,7 @@ if (-not $PythonCommand) { throw "Python not found: $Python. Add Python to PATH 
 $Python = $PythonCommand.Source
 $CampaignArgs = @('-u', "$Root/scripts/syn_campaign.py", '--kali-host', $KaliHost,
     '--kali-user', $KaliUser, '--kali-project', $KaliProject, '--label-host', $LabelHost,
-    '--ssid', $Ssid, '--port', $Port)
+    '--attack-iface', $KaliAttackIface, '--port', $Port)
 if ($Out) { $CampaignArgs += @('--out', $Out) }
 if ($Run) { $CampaignArgs += '--run' }
 & $Python @CampaignArgs

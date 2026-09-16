@@ -91,6 +91,8 @@ def archive_windows(path, *, window_ms=100, guard_ms=1000, status_age_ms=250):
         for session in db.execute("SELECT * FROM sessions"):
             if session["end_reason"] == "campaign_incomplete":
                 raise ValueError(f"Incomplete campaign: {path}; inspect labels and remote execution before training")
+            if session["end_reason"] in ("collector_error", "serial_error"):
+                raise ValueError(f"Abnormal archive end ({session['end_reason']}): {path}; inspect before training")
             if session["ended_at_utc"] is None:
                 raise ValueError(f"Archive is not closed: {path}; stop collector with Ctrl+C first")
             sid = session["session_id"]

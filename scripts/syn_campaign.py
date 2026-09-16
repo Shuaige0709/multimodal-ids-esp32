@@ -28,8 +28,7 @@ def ssh_args(a, command):
 
 
 def remote_env(a, target):
-    values = dict(NIDS_ESP32_IP=target, NIDS_WIFI_IFACE='wlan0',
-                  NIDS_MON_IFACE='wlan0mon', NIDS_SSID=a.ssid,
+    values = dict(NIDS_ESP32_IP=target, NIDS_SYN_IFACE=a.attack_iface,
                   NIDS_LABEL_HOST=a.label_host, NIDS_LABEL_PORT='9999',
                   NIDS_REQUIRE_LABEL_ACK='1', NIDS_SKIP_HOSTONLY='1')
     return '; '.join('export '+k+'='+shlex.quote(v) for k, v in values.items())
@@ -50,9 +49,9 @@ def preflight(a):
            'bash -n host/attacks/syn_flood.sh && '
            'test -x host/attacks/syn_flood.sh && '
            "! grep -q " + shlex.quote('\r') + ' host/attacks/syn_flood.sh && '
-           "iw dev wlan0 link | grep -Fx " + shlex.quote('\tSSID: '+a.ssid) + ' && '
+           'ip -4 addr show dev '+shlex.quote(a.attack_iface)+" | grep -q 'inet ' && "
            'sudo -n -l '+script+' >/dev/null')
-    run_check(a, cmd, 'Kali tools/Wi-Fi/sudo')
+    run_check(a, cmd, 'Kali tools/IPv4 interface/sudo')
 
 
 def run_check(a, command, stage):
@@ -67,10 +66,16 @@ def run_check(a, command, stage):
 def read_live(path, collector):
     if collector.poll() is not None:
         raise RuntimeError('Collector exited; see collector.err.log')
-    try:
-        state = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
+    for attempt in range(3):
+        try:
+            state = json.loads(path.read_text(encoding='utf-8'))
+            break
+        except PermissionError:
+            if attempt == 2:
+                return None
+            time.sleep(0.01)
+        except (OSError, ValueError):
+            return None
     if not state.get('active') or time.time_ns()-state['updated_ns'] > 8_000_000_000:
         return None
     if time.time_ns()-state.get('hello_received_ns', 0) > 6_000_000_000:
@@ -92,17 +97,31 @@ def verify_events(path):
                 raise RuntimeError(f'No {table} during labeled experiment')
 
 
+def log_tail(path):
+    """Bound memory even if the remote tool produces a large log."""
+    try:
+        with path.open('rb') as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell()-8192))
+            return stream.read().decode('utf-8', errors='replace').strip()
+    except OSError as exc:
+        return f'Cannot read {path}: {exc}'
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--kali-host', default='192.168.56.101')
     p.add_argument('--kali-user', default='hao')
     p.add_argument('--kali-project', default='/home/hao/桌面/multimodal-ids-esp32')
     p.add_argument('--label-host', default='192.168.56.1')
-    p.add_argument('--ssid', default='5F23')
+    p.add_argument('--ssid', help='Deprecated; ignored. SYN uses routed IPv4, not Wi-Fi association.')
+    p.add_argument('--attack-iface', default='eth0', help='Kali virtual NIC with a route to ESP32')
     p.add_argument('--port', default='COM3')
     p.add_argument('--out')
     p.add_argument('--run', action='store_true')
     a = p.parse_args(argv)
+    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,14}', a.attack_iface):
+        p.error('Invalid interface name')
     for value in (a.kali_host, a.label_host):
         if not ipaddress.IPv4Address(value).is_private:
             p.error('Private lab addresses required')
@@ -125,7 +144,8 @@ def main(argv=None):
     # New process group prevents terminal Ctrl+C from abruptly killing the collector.
     flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
-        with (work/'collector.log').open('w', encoding='utf-8') as log, (work/'collector.err.log').open('w', encoding='utf-8') as err:
+        with (work/'collector.log').open('w', encoding='utf-8') as log, (work/'collector.err.log').open('w', encoding='utf-8') as err, \
+             (work/'kali.log').open('wb') as remote_log, (work/'kali.err.log').open('wb') as remote_err:
             collector = subprocess.Popen([sys.executable, '-u', str(ROOT/'scripts/serial_collector.py'),
                 '--port', a.port, '--baud', '921600', '--out', str(output), '--label', 'normal',
                 '--label-bind', a.label_host, '--label-port', '9999', '--live-state', str(live),
@@ -155,7 +175,9 @@ def main(argv=None):
                 raise RuntimeError('ESP32 address changed; restart session')
             cmd = ('cd '+shlex.quote(a.kali_project)+' && ( '+remote_env(a, target)+'; '
                    'sudo -n -E '+shlex.quote(a.kali_project+'/host/attacks/syn_flood.sh')+' )')
-            remote = subprocess.Popen(ssh_args(a, cmd), creationflags=flags)
+            print(f'Kali logs: {work / "kali.log"}, {work / "kali.err.log"}', flush=True)
+            remote = subprocess.Popen(ssh_args(a, cmd), creationflags=flags,
+                                      stdout=remote_log, stderr=remote_err)
             deadline = time.monotonic()+180
             while remote.poll() is None:
                 if time.monotonic() > deadline:
@@ -164,7 +186,8 @@ def main(argv=None):
                     raise RuntimeError('Capture/IP lost during experiment; inspect incomplete archive')
                 time.sleep(1)
             if remote.returncode:
-                raise RuntimeError(f'Remote experiment failed: {remote.returncode}')
+                detail = log_tail(work/'kali.err.log') or log_tail(work/'kali.log') or 'No remote diagnostic output.'
+                raise RuntimeError(f'Remote experiment failed: {remote.returncode}\n{detail}\nFull logs: {work}')
             verify_events(output/'dataset.sqlite3')
             print('START/STOP committed. Collecting 30 seconds recovery.', flush=True)
             for _ in range(30):
@@ -174,6 +197,8 @@ def main(argv=None):
             report['result'] = 'completed'
     except BaseException as exc:
         report['error'] = str(exc) or type(exc).__name__
+        report['kali_stderr_tail'] = log_tail(work/'kali.err.log')
+        report['collector_stderr_tail'] = log_tail(work/'collector.err.log')
         raise
     finally:
         if remote is not None and remote.poll() is None:

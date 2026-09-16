@@ -73,7 +73,6 @@ def publish_live(dataset, args, *, active=True):
     if not args.live_state:
         return
     path = Path(args.live_state)
-    path.parent.mkdir(parents=True, exist_ok=True)
     hello = dataset.latest_hello or {}
     status = dataset.latest_status or {}
     ip = args.esp32_ip
@@ -88,8 +87,24 @@ def publish_live(dataset, args, *, active=True):
              "esp32_mac": hello.get("mac"), "label_host": args.label_advertise or args.label_bind,
              "control_port": args.label_port, "statistics": dataset.statistics()}
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    # Auxiliary UI state must not take down the binary archive. Keep retries
+    # short (20 ms total) so a Windows sharing violation cannot stall UART.
+    for attempt in range(3):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(path)
+            return True
+        except PermissionError as exc:
+            error = exc
+            if attempt < 2:
+                time.sleep(0.01)
+        except OSError as exc:
+            error = exc
+            break
+    print(f"Warning: live state update failed; archive collection continues: {error}",
+          file=sys.stderr, flush=True)
+    return False
 
 
 def collect(args, serial_module):
