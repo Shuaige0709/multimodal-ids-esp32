@@ -1,185 +1,184 @@
 #!/usr/bin/env python3
-"""
-Serial collector (Mode S) — RFC5424 syslog over USB-UART.
+"""Collect raw ESP32 packets + receive metadata + periodic hardware states.
 
-Standby mode: open the COM port *before* the deauth campaign so the OS does
-not re-enumerate / reset the ESP32 when Wi-Fi drops. Keep the port open for
-the whole session.
+  python scripts/serial_collector.py --port COM3 --out captures/run_001
+  python scripts/serial_collector.py --port COM3 --label normal --standby
+  python scripts/serial_collector.py --format legacy --port COM3 --baud 115200 --out old.csv
 
-Usage:
-  pip install pyserial
-  python scripts/serial_collector.py --port COM3 --baud 115200 --out data/raw/serial.csv
-  python scripts/serial_collector.py --port COM3 --standby --out data/raw/serial.csv
+Do not run the IDF serial monitor at the same time. Raw mode requires the raw
+capture firmware; a legacy syslog stream is preserved as wire bytes, not packets.
 """
 import argparse
-import csv
-import os
-import re
+from contextlib import suppress
+from datetime import datetime, timezone
+import importlib
+from pathlib import Path
+import sqlite3
 import sys
 import time
+import uuid
 
-try:
-    import serial
-    from serial import SerialException
-except ImportError:
-    print("pyserial required: pip install pyserial", file=sys.stderr)
-    raise SystemExit(1)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
-SD_RE = re.compile(
-    r"\[meta@(?P<pen>[^ ]+) subtype=\"(?P<subtype>[^\"]*)\" rssi=\"(?P<rssi>[^\"]+)\" "
-    r"snr=\"(?P<snr>[^\"]+)\" ipat=\"(?P<ipat>[^\"]+)\" seq=\"(?P<seq>[^\"]+)\" "
-    r"heap=\"(?P<heap>[^\"]+)\" minheap=\"(?P<minheap>[^\"]+)\" uptime=\"(?P<uptime>[^\"]+)\" "
-    r"reconn=\"(?P<reconn>[^\"]+)\" qpeak=\"(?P<qpeak>[^\"]+)\" udpfail=\"(?P<udpfail>[^\"]+)\" "
-    r"backlog=\"(?P<backlog>[^\"]+)\" dropped=\"(?P<dropped>[^\"]+)\""
-    r"(?: host_mac=\"(?P<host_mac>[^\"]+)\")?"
-    r"(?: attack=\"(?P<attack>[^\"]+)\")?"
-    r"(?: deauth_tgt=\"(?P<deauth_tgt>[^\"]+)\")?"
-    r"(?: seq_jump=\"(?P<seq_jump>[^\"]+)\")?"
-    r"(?: ap_bssid=\"(?P<ap_bssid>[^\"]+)\")?"
-    r"(?: channel=\"(?P<channel>[^\"]+)\")?"
-    r"(?: win_pkts=\"(?P<win_pkts>[^\"]+)\")?"
-    r"(?: win_dens=\"(?P<win_dens>[^\"]+)\")?"
-    r"(?: pred=\"(?P<pred>[^\"]+)\")?"
-    r"(?: calib=\"(?P<calib>[^\"]+)\")?"
-    r"(?: thr=\"(?P<thr>[^\"]+)\")?"
-    r"(?: gw_mac=\"(?P<gw_mac>[^\"]+)\")?"
-    r"(?: gw_flip=\"(?P<gw_flip>[^\"]+)\")?"
-    r"(?: win_deauth=\"(?P<win_deauth>[^\"]+)\")?"
-    r"(?: win_probe=\"(?P<win_probe>[^\"]+)\")?"
-    r"(?: win_beacon=\"(?P<win_beacon>[^\"]+)\")?"
-    r"(?: win_auth=\"(?P<win_auth>[^\"]+)\")?"
-    r"(?: win_bssid=\"(?P<win_bssid>[^\"]+)\")?"
-    r"(?: win_twin=\"(?P<win_twin>[^\"]+)\")?"
-    r"(?: win_rogue=\"(?P<win_rogue>[^\"]+)\")?"
-    r"(?: win_mgmt=\"(?P<win_mgmt>[^\"]+)\")?"
-    r"(?: win_data=\"(?P<win_data>[^\"]+)\")?"
-    r"(?: win_ctrl=\"(?P<win_ctrl>[^\"]+)\")?"
-    r"(?: win_bytes=\"(?P<win_bytes>[^\"]+)\")?"
-    r"(?: win_len_mean=\"(?P<win_len_mean>[^\"]+)\")?"
-    r"(?: win_len_max=\"(?P<win_len_max>[^\"]+)\")?"
-    r"(?: win_mgmt_bytes=\"(?P<win_mgmt_bytes>[^\"]+)\")?"
-    r"(?: win_data_bytes=\"(?P<win_data_bytes>[^\"]+)\")?"
-    r"\]"
-)
-
-HEADER = [
-    "timestamp", "pen", "subtype", "rssi", "snr", "ipat", "seq", "heap", "minheap",
-    "uptime", "reconn", "qpeak", "udpfail", "backlog", "dropped", "host_mac",
-    "pred_attack", "pred_raw", "calib", "calib_thr", "deauth_tgt", "seq_jump",
-    "ap_bssid", "channel", "win_pkts", "win_dens",
-    "win_deauth", "win_probe", "win_beacon", "win_auth", "win_bssid",
-    "win_twin", "win_rogue",
-    "win_mgmt", "win_data", "win_ctrl", "win_bytes",
-    "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
-    "gw_mac", "gw_flip", "raw",
-]
+from host.collector.raw_dataset import DatasetWriter
 
 
-def parse_sd(line):
-    m = SD_RE.search(line)
-    return m.groupdict() if m else None
+class SerialTransportError(RuntimeError):
+    """Distinguishes port failures from filesystem OSErrors such as a full disk."""
 
 
-def open_serial(port, baud, standby):
-    """Open serial; in standby, retry until the port appears (no ESP32 reset dance)."""
-    deadline = time.time() + (300 if standby else 15)
-    last_err = None
-    while time.time() < deadline:
-        try:
-            ser = serial.Serial(port, baud, timeout=1)
-            # Avoid DTR toggle reset on many ESP32 USB-UART bridges when possible
-            try:
-                ser.dtr = False
-                ser.rts = False
-            except Exception:
-                pass
-            print(f"Opened {ser.portstr} (standby={standby})")
-            return ser
-        except SerialException as e:
-            last_err = e
-            if not standby:
-                break
-            print(f"  waiting for {port}: {e}")
-            time.sleep(1.0)
-    raise SystemExit(f"Could not open {port}: {last_err}")
+def open_serial(serial_module, port, baud):
+    """Set DTR/RTS before opening. Some OS/drivers may still pulse reset lines."""
+    connection = serial_module.Serial(port=None, baudrate=baud, timeout=0.25)
+    try:
+        connection.dtr = False
+        connection.rts = False
+        connection.port = port
+        connection.open()
+        return connection
+    except BaseException:
+        with suppress(serial_module.SerialException, OSError):
+            connection.close()
+        raise
 
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--port", required=True, help="Serial port, e.g. COM3 or /dev/ttyUSB0")
-    p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--out", default="serial_capture.csv")
-    p.add_argument(
-        "--standby",
-        action="store_true",
-        help="Open early and keep the port open across Wi-Fi disconnects (Mode S)",
-    )
-    args = p.parse_args()
+def _print_stats(dataset):
+    stats = dataset.statistics()
+    parser = stats["parser"]
+    errors = sum(value for key, value in parser.items() if key.endswith("_errors"))
+    print(f"bytes={dataset.offset} packets={dataset.counts['packets']} "
+          f"states={dataset.counts['statuses']} hello={dataset.counts['hellos']} "
+          f"decode_errors={errors} stream_gaps={stats['stream_sequence'].get('gaps', 0)} "
+          f"packet_gaps={stats['packet_sequence'].get('gaps', 0)}", flush=True)
+    status = stats["latest_status"]
+    if status is not None:
+        print(f"device boot={status['boot_id']} heap={status['free_heap']} "
+              f"minheap={status['min_free_heap']} queue={status['queue_depth']} "
+              f"queue_peak={status['queue_peak']} pool_free={status['pool_free']} "
+              f"drop_pool={status['drop_pool_count']} invalid={status['invalid_count']} "
+              f"tx_fail={status['tx_fail_count']} state_drop={status['status_drop_count']} "
+              f"unavailable={status['payload_unavailable_count']} "
+              f"truncated={status['truncated_count']}", flush=True)
+    if dataset.offset and not parser.get("valid_records"):
+        print("No valid NIDR records yet: check raw firmware mode and matching baud.",
+              file=sys.stderr)
 
-    out_dir = os.path.dirname(os.path.abspath(args.out))
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
 
-    ser = open_serial(args.port, args.baud, args.standby)
-    if args.standby:
-        print("Standby: leave this running; start deauth when ready. Ctrl+C to stop.")
-
-    with open(args.out, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(HEADER)
-        try:
-            while True:
+def collect(args, serial_module):
+    serial_errors = (serial_module.SerialException, OSError)
+    connection = None
+    dataset = DatasetWriter(args.out, port=args.port, baud=args.baud, label=args.label,
+                            max_status_age_ms=args.max_status_age_ms)
+    last_flush = last_stats = time.monotonic()
+    exit_code, end_reason = 0, "completed"
+    try:
+        print(f"Dataset: {dataset.path.resolve()}\nSession: {dataset.session_id}\n"
+              f"Label: {args.label if args.label is not None else 'unknown (NULL)'}\n"
+              "Ctrl+C stops and flushes the archive.", flush=True)
+        while True:
+            if connection is None:
                 try:
-                    line = ser.readline().decode("utf-8", errors="replace").strip()
-                except SerialException as e:
-                    print(f"Serial error: {e}; reconnecting..." if args.standby else e)
+                    connection = open_serial(serial_module, args.port, args.baud)
+                except serial_errors as exc:
+                    dataset.event("serial_open_failed", str(exc))
+                    dataset.flush()
                     if not args.standby:
-                        break
-                    try:
-                        ser.close()
-                    except Exception:
-                        pass
-                    time.sleep(1.0)
-                    ser = open_serial(args.port, args.baud, True)
+                        raise SerialTransportError(str(exc)) from exc
+                    print(f"Waiting for {args.port}: {exc}", file=sys.stderr)
+                    time.sleep(1)
                     continue
-                if not line:
-                    continue
-                sd = parse_sd(line)
-                if sd:
-                    writer.writerow([
-                        time.time(), sd.get("pen"), sd.get("subtype"), sd.get("rssi"),
-                        sd.get("snr"), sd.get("ipat"), sd.get("seq"), sd.get("heap"),
-                        sd.get("minheap"), sd.get("uptime"), sd.get("reconn"),
-                        sd.get("qpeak"), sd.get("udpfail"), sd.get("backlog"),
-                        sd.get("dropped"), sd.get("host_mac"), sd.get("attack"),
-                        sd.get("pred"), sd.get("calib"), sd.get("thr"),
-                        sd.get("deauth_tgt"), sd.get("seq_jump"), sd.get("ap_bssid"),
-                        sd.get("channel"), sd.get("win_pkts"), sd.get("win_dens"),
-                        sd.get("win_deauth"), sd.get("win_probe"),
-                        sd.get("win_beacon"), sd.get("win_auth"),
-                        sd.get("win_bssid"),
-                        sd.get("win_twin"), sd.get("win_rogue"),
-                        sd.get("win_mgmt"), sd.get("win_data"), sd.get("win_ctrl"),
-                        sd.get("win_bytes"),
-                        sd.get("win_len_mean"), sd.get("win_len_max"),
-                        sd.get("win_mgmt_bytes"), sd.get("win_data_bytes"),
-                        sd.get("gw_mac"), sd.get("gw_flip"), line,
-                    ])
-                else:
-                    writer.writerow([time.time()] + [""] * (len(HEADER) - 2) + [line])
-                csvfile.flush()
-        except KeyboardInterrupt:
-            print("Stopped")
+                dataset.event("serial_open", f"{args.port}@{args.baud}")
+                print(f"Opened {args.port} at {args.baud} baud", flush=True)
+            try:
+                # Never depend on newlines: arbitrary binary data can contain them.
+                waiting = connection.in_waiting
+                data = connection.read(min(max(waiting, 1), 65536))
+            except serial_errors as exc:
+                dataset.connection_break(exc)
+                with suppress(*serial_errors):
+                    connection.close()
+                connection = None
+                if not args.standby:
+                    raise SerialTransportError(str(exc)) from exc
+                print(f"Serial disconnected; waiting to reconnect: {exc}", file=sys.stderr)
+                time.sleep(1)
+                continue
+            if data:
+                dataset.ingest(data, time.time_ns())
+            now = time.monotonic()
+            if now - last_flush >= 1:
+                dataset.flush()
+                last_flush = now
+            if now - last_stats >= args.stats_interval:
+                _print_stats(dataset)
+                last_stats = now
+    except KeyboardInterrupt:
+        end_reason = "user_interrupt"
+        print("Stopped.")
+    except SerialTransportError as exc:
+        exit_code, end_reason = 1, "serial_error"
+        print(f"Serial error: {exc}", file=sys.stderr)
+    except BaseException:
+        end_reason = "collector_error"
+        raise
+    finally:
+        try:
+            if connection is not None:
+                with suppress(*serial_errors):
+                    connection.close()
         finally:
             try:
-                ser.close()
-            except Exception:
-                pass
+                _print_stats(dataset)
+            finally:
+                dataset.close(end_reason)
+    return exit_code
 
+
+def main(argv=None, *, serial_module=None):
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--format", choices=("raw", "legacy"), default="raw")
+    parser.add_argument("--port", required=True, help="For example COM3 or /dev/ttyUSB0")
+    parser.add_argument("--baud", type=int, help="Default: raw 921600, legacy 115200")
+    parser.add_argument("--out", help="Raw: NEW output directory; legacy: CSV file")
+    parser.add_argument("--standby", action="store_true", help="Retry port errors until Ctrl+C")
+    parser.add_argument("--label", help="Constant experiment label; omitted means unknown, not normal")
+    parser.add_argument("--max-status-age-ms", type=int, default=250,
+                        help="Past state older than this is flagged stale in packet_samples")
+    parser.add_argument("--stats-interval", type=float, default=5)
+    args = parser.parse_args(argv)
+    if args.format == "legacy":
+        if args.label is not None:
+            parser.error("--label is supported only by raw mode")
+        if Path(args.out or "serial_capture.csv").exists():
+            parser.error("Legacy output already exists; choose a NEW CSV file")
+        forwarded = ["--port", args.port, "--baud", str(args.baud or 115200),
+                     "--out", args.out or "serial_capture.csv"]
+        if args.standby:
+            forwarded.append("--standby")
+        legacy = importlib.import_module("scripts.serial_collector_legacy")
+        return legacy.main(forwarded) or 0
+    args.baud = 921600 if args.baud is None else args.baud
+    if args.baud <= 0 or args.max_status_age_ms < 0 or args.stats_interval <= 0:
+        parser.error("baud/stats-interval must be positive; max-status-age-ms must be nonnegative")
+    if args.out is None:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        args.out = str(ROOT / "captures" / f"{stamp}_{uuid.uuid4().hex[:8]}")
+    if Path(args.out).exists():
+        parser.error(f"Output already exists; choose a NEW directory: {args.out}")
+    if serial_module is None:
+        try:
+            serial_module = importlib.import_module("serial")
+        except ImportError:
+            print("pyserial required: pip install pyserial", file=sys.stderr)
+            return 1
+    try:
+        return collect(args, serial_module)
+    except (OSError, sqlite3.Error) as exc:
+        print(f"Cannot save dataset: {exc}", file=sys.stderr)
+        return 1
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
