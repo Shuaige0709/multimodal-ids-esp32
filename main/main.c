@@ -45,6 +45,10 @@ static EventGroupHandle_t wifi_event_group = NULL;
 
 static volatile bool wifi_connected = false;
 static uint32_t wifi_reconnect_count = 0;
+static esp_timer_handle_t wifi_reconnect_timer = NULL;
+static uint32_t wifi_reconnect_delay_ms = 500;
+#define WIFI_RECONNECT_INITIAL_MS 500U
+#define WIFI_RECONNECT_MAX_MS 4000U
 static uint32_t send_interval_packets = 10;
 static uint32_t consecutive_send_failures = 0;
 static uint32_t consecutive_send_successes = 0;
@@ -55,12 +59,12 @@ static const uint32_t SEND_INTERVAL_FAST = DATASET_PROFILE ? 50 : 20;
 static const uint32_t SEND_INTERVAL_SLOW = DATASET_PROFILE ? 100 : 50;
 static const uint32_t SEND_FAIL_THRESHOLD = 3;
 static const uint32_t SEND_RECOVER_THRESHOLD = 10;
-/* Backlog DRAM budget is tight on classic ESP32 (no PSRAM).
- * 200×896 overflowed dram0_0_seg (~+35 KB). Keep MSG_MAX enough for
- * frame-composition sidecars, cut rows so total ≈ prior 200×704 budget. */
+/* Keep only a short diagnostic ring on classic ESP32 (no PSRAM).
+ * Full dataset capture should use UART; deployment does not need a large
+ * queue of stale RFC5424 rows after a Wi-Fi outage. */
 #define SYSLOG_MSG_MAX 864
-#define SYSLOG_BACKLOG_CAP 160
-static const uint32_t SYSLOG_BACKLOG_MAX = DATASET_PROFILE ? SYSLOG_BACKLOG_CAP : 128;
+#define SYSLOG_BACKLOG_CAP 16
+static const uint32_t SYSLOG_BACKLOG_MAX = SYSLOG_BACKLOG_CAP;
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
 
 static char syslog_backlog[SYSLOG_BACKLOG_CAP][SYSLOG_MSG_MAX];
@@ -69,6 +73,7 @@ static uint32_t syslog_backlog_tail = 0;
 static uint32_t syslog_backlog_count = 0;
 static uint32_t syslog_backlog_dropped = 0;
 static uint32_t queue_peak_depth = 0;
+static volatile uint32_t rx_queue_drop_total = 0;
 
 // --- Collector auto-discovery state (learned from UDP broadcast beacon) ---
 static volatile bool collector_discovered = false;
@@ -100,6 +105,8 @@ static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char 
 static void serial_init(void);
 static void send_syslog_serial(const char *buffer);
 static bool resolve_collector(struct sockaddr_in *dest_addr);
+static void wifi_reconnect_timer_cb(void *arg);
+static void schedule_wifi_reconnect(void);
 
 typedef struct{
     uint32_t timestamp; // packet timestamp
@@ -123,17 +130,82 @@ typedef struct{
 static QueueHandle_t pkt_info_queue = NULL; // queue to store packet info for processing
 static uint32_t last_timestamp = 0; // global variable to store timestamp of the last received packet for calculating inter-arrival time (IPAT)
 
+static const char *reset_reason_name(esp_reset_reason_t reason)
+{
+    switch (reason) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXTERNAL";
+    case ESP_RST_SW:        return "SOFTWARE";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+    }
+}
+
+static void wifi_reconnect_timer_cb(void *arg)
+{
+    (void)arg;
+    if (wifi_connected) {
+        return;
+    }
+
+    esp_err_t err = esp_wifi_connect();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Delayed WiFi reconnect failed: %s", esp_err_to_name(err));
+    }
+}
+
+static void schedule_wifi_reconnect(void)
+{
+    const uint32_t delay_ms = wifi_reconnect_delay_ms;
+
+    if (wifi_reconnect_timer == NULL) {
+        ESP_LOGW(TAG, "Reconnect timer unavailable; reconnecting immediately");
+        esp_wifi_connect();
+        return;
+    }
+
+    if (esp_timer_is_active(wifi_reconnect_timer)) {
+        esp_timer_stop(wifi_reconnect_timer);
+    }
+
+    esp_err_t err = esp_timer_start_once(wifi_reconnect_timer, (uint64_t)delay_ms * 1000U);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Could not schedule WiFi reconnect: %s", esp_err_to_name(err));
+        esp_wifi_connect();
+        return;
+    }
+
+    if (wifi_reconnect_delay_ms < WIFI_RECONNECT_MAX_MS) {
+        wifi_reconnect_delay_ms *= 2U;
+        if (wifi_reconnect_delay_ms > WIFI_RECONNECT_MAX_MS) {
+            wifi_reconnect_delay_ms = WIFI_RECONNECT_MAX_MS;
+        }
+    }
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *event =
+            (const wifi_event_sta_disconnected_t *)event_data;
+        const unsigned reason = event ? (unsigned)event->reason : 0U;
+        const uint32_t delay_ms = wifi_reconnect_delay_ms;
         wifi_connected = false;
         wifi_reconnect_count++;
         nids_gw_on_disconnect();
-        ESP_LOGW(TAG, "WiFi disconnected; pausing UDP sends and reconnecting");
+        ESP_LOGW(TAG,
+                 "WiFi disconnected (reason=%u); pausing UDP sends, reconnect in %lu ms",
+                 reason, (unsigned long)delay_ms);
         if (wifi_event_group) {
             xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
         }
-        esp_wifi_connect();
+        schedule_wifi_reconnect();
         return;
     }
 
@@ -178,6 +250,10 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         esp_wifi_set_ps(WIFI_PS_NONE);
 
         wifi_connected = true;
+        wifi_reconnect_delay_ms = WIFI_RECONNECT_INITIAL_MS;
+        if (wifi_reconnect_timer && esp_timer_is_active(wifi_reconnect_timer)) {
+            esp_timer_stop(wifi_reconnect_timer);
+        }
         consecutive_send_failures = 0;
         consecutive_send_successes = 0;
         send_interval_packets = SEND_INTERVAL_FAST;
@@ -442,7 +518,7 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
     // rx_ctrl is the metadata header, which contains RSSI, channel, timestamp, etc.
     // payload is the actual packet data (802.11), which can be parsed according to the packet type
     wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
-    nids_pkt_info_t info;
+    nids_pkt_info_t info = {0};
 
     // extract common metadata for all packet types
     info.timestamp = pkt->rx_ctrl.timestamp;
@@ -557,10 +633,10 @@ void sniffer_callback(void* buf, wifi_promiscuous_pkt_type_t type){
         info.subtype[0] = '\0';
     }
 
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xQueueSendFromISR(pkt_info_queue, &info, &xHigherPriorityTaskWoken);
-    if (xHigherPriorityTaskWoken) {
-        portYIELD_FROM_ISR();
+    // ESP-IDF invokes this callback from the Wi-Fi driver task, not an ISR.
+    // Never block that task; drop a sample if the consumer cannot keep up.
+    if (pkt_info_queue == NULL || xQueueSend(pkt_info_queue, &info, 0) != pdTRUE) {
+        rx_queue_drop_total++;
     }
 
     // optional metadata
@@ -819,6 +895,7 @@ void nids_analysis_task(void* arg){
     nids_pkt_info_t info;
     char syslog_buffer[SYSLOG_MSG_MAX];
     uint32_t pkt_count = 0;
+    int64_t last_attack_log_us = 0;
 
     // OLED status counters
     static bool oled_inited = false;
@@ -967,13 +1044,18 @@ void nids_analysis_task(void* arg){
                 int pred = nids_predict(&f);
                 last_raw_pred = pred;
                 last_inference_us = (uint32_t)(esp_timer_get_time() - t0);
+                bool was_attack_detected = attack_detected;
 #if NIDS_CALIB_ENABLE
                 attack_detected = nids_calib_on_window(&f, pred);
 #else
                 attack_detected = (pred != 0);
 #endif
 
-                if (attack_detected) {
+                int64_t attack_log_now_us = esp_timer_get_time();
+                if (attack_detected &&
+                    (!was_attack_detected || last_attack_log_us == 0 ||
+                     (attack_log_now_us - last_attack_log_us) >= 500000)) {
+                    last_attack_log_us = attack_log_now_us;
                     ESP_LOGW(TAG2,
                              "[INFERENCE] attack window: pred=%d calib=%s thr=%.1f pkts=%lu deauth=%lu tgt=%lu jump=%lu density=%.0f heap=%.0f (%lu us)",
                              pred,
@@ -1112,10 +1194,11 @@ void nids_analysis_task(void* arg){
 
             if(pkt_count % 100 == 0){ // print info every 100 packets
                 uint32_t free_heap = esp_get_free_heap_size();
-                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu, infer=%lu us, attack=%d, hips=%lu)",
+                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu, infer=%lu us, attack=%d, hips=%lu, qdrop=%lu)",
                          pkt_count, send_interval_packets, free_heap,
                          (unsigned long)last_inference_us, attack_detected ? 1 : 0,
-                         (unsigned long)mitigation_events_total);
+                         (unsigned long)mitigation_events_total,
+                         (unsigned long)rx_queue_drop_total);
                 printf("Stack remain: %lu bytes\n", (uint32_t)stack_mark);
                 if(!oled_inited){
                     ESP_LOGI(TAG, "Attempting OLED init...");
@@ -1152,7 +1235,7 @@ void nids_analysis_task(void* arg){
 void app_main(void) {   
     // get the last reset reason
     esp_reset_reason_t reason = esp_reset_reason();
-    ESP_LOGI("HIDS", "Last Reset Reason: %d", reason);
+    ESP_LOGI("HIDS", "Last Reset Reason: %d (%s)", reason, reset_reason_name(reason));
 #if ENABLE_AUTO_DISCOVERY
     ESP_LOGI(TAG, "Collector: auto-discovery UDP :%d; fallback=%s",
              DISCOVERY_PORT,
@@ -1194,13 +1277,29 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
+    wifi_event_group = xEventGroupCreate();
+    if (wifi_event_group == NULL) {
+        ESP_LOGW(TAG, "Failed to create WiFi event group; falling back to fixed delay");
+    }
+
     // create a queue to store packet info for processing
     pkt_info_queue = xQueueCreate(100, sizeof(nids_pkt_info_t));
-    xTaskCreate(nids_analysis_task, "nids_analysis_task", 4096, NULL, 5, NULL);
+    ESP_ERROR_CHECK(pkt_info_queue ? ESP_OK : ESP_ERR_NO_MEM);
+    BaseType_t task_created = xTaskCreate(nids_analysis_task, "nids_analysis_task", 6144, NULL, 5, NULL);
+    ESP_ERROR_CHECK(task_created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
     // start WiFi driver
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    const esp_timer_create_args_t reconnect_timer_args = {
+        .callback = &wifi_reconnect_timer_cb,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "wifi_reconnect",
+        .skip_unhandled_events = true,
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&reconnect_timer_args, &wifi_reconnect_timer));
 
     // ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
@@ -1234,9 +1333,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "Connecting to WiFi...");
     esp_wifi_connect(); // start connecting...
     // Wait for IP_EVENT_STA_GOT_IP via event group instead of fixed delay
-    wifi_event_group = xEventGroupCreate();
     if (wifi_event_group == NULL) {
-        ESP_LOGW(TAG, "Failed to create wifi event group; falling back to fixed delay");
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_wifi_set_promiscuous(true);
     } else {
