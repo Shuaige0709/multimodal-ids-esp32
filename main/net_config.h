@@ -8,7 +8,7 @@
 #ifndef NIDS_NET_CONFIG_H
 #define NIDS_NET_CONFIG_H
 
-/* --- Wi-Fi credentials (must match the AP / phone hotspot) --- */
+/* --- Wi-Fi credentials (must match the AP). Local home AP — do not git add this file. --- */
 #define WIFI_SSID "302"
 #define WIFI_PASS "88888888"
 
@@ -24,6 +24,15 @@
  * local backlog and flushed on discovery.
  */
 #define ENABLE_AUTO_DISCOVERY 1
+
+/*
+ * Optional SSD1306 display (I2C SDA=21, SCL=22, address 0x3C).
+ * Set to 0 for boards without an OLED. I2C/OLED initialization and all display
+ * updates are then compiled out, so a missing display cannot spam errors.
+ */
+#ifndef NIDS_OLED_ENABLE
+#define NIDS_OLED_ENABLE 1
+#endif
 
 /*
  * Optional static fallback. Used only when auto-discovery is disabled, or as a

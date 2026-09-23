@@ -215,6 +215,19 @@ console logs；CSV 只保存 `[meta@...]` window rows，全部 console 訊息另
 console 流量，可把 `UART_WINDOW_MIRROR_USE_CONSOLE` 設為 `0`，再用 USB-TTL
 接 ESP32 GPIO17 (TX) 與 GND；一般實驗先不用買。
 
+### OLED 有無的板子共用韌體
+
+OLED 是選配。在 `main/net_config.h` 設定：
+
+```c
+#define NIDS_OLED_ENABLE 1  // 有 SSD1306 OLED
+#define NIDS_OLED_ENABLE 0  // 沒有 OLED；不初始化 I2C，也不嘗試顯示
+```
+
+啟用但未接到 `0x3C` 時只嘗試初始化一次，不會持續洗錯誤訊息。新版畫面以
+2 倍字型顯示 `READY / ALERT / RECOVER / LINK LOST`，攻擊告警保留 8 秒，
+下方 8-pixel 高字型顯示模型與 RF/link evidence，不小於舊版文字高度。
+
 ---
 
 ## 6. Kali 最小指令（模式 W 先看）

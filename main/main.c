@@ -913,12 +913,20 @@ void nids_analysis_task(void* arg){
     int64_t last_transport_log_us = 0;
     int64_t last_status_log_us = 0;
 
-    // OLED status counters
-    static bool oled_inited = false;
-    static int64_t last_oled_update_ms = 0;
-    static const int64_t OLED_UPDATE_MIN_INTERVAL_MS = 1500;
-    static int8_t last_rssi = 0;
-    static uint32_t last_ipat = 0;
+#if NIDS_OLED_ENABLE
+    // Demo display: alert evidence is frozen while the 8 s latch is visible.
+    bool oled_init_attempted = false;
+    bool oled_inited = false;
+    int64_t last_oled_update_ms = 0;
+    const int64_t OLED_UPDATE_MIN_INTERVAL_MS = 1000;
+    const int64_t OLED_ALERT_HOLD_US = 8000000;
+    const int64_t OLED_RECOVER_HOLD_US = 3000000;
+    int64_t oled_alert_until_us = 0;
+    int64_t oled_recover_until_us = 0;
+    int8_t last_rssi = 0;
+    oled_status_t oled_live = {0};
+    oled_status_t oled_alert_snapshot = {0};
+#endif
 
     // --- On-device 100 ms tumbling window (non-overlapping; matches offline bins) ---
     const int64_t WINDOW_US = 100000; // 100 ms
@@ -964,9 +972,10 @@ void nids_analysis_task(void* arg){
             }
             UBaseType_t stack_mark = uxTaskGetStackHighWaterMark(NULL);
             
-            // Track latest RSSI and IPAT for OLED display
+            // Track the latest RF level for the optional local display.
+#if NIDS_OLED_ENABLE
             last_rssi = info.rssi;
-            last_ipat = info.ipat;
+#endif
 
             // ---- 100 ms tumbling window aggregation (feeds on-device inference) ----
             w_total++;
@@ -1071,6 +1080,29 @@ void nids_analysis_task(void* arg){
 #endif
 
                 int64_t attack_log_now_us = esp_timer_get_time();
+#if NIDS_OLED_ENABLE
+                oled_live.raw_pred = pred;
+                oled_live.gated_pred = attack_detected ? 1 : 0;
+                oled_live.win_packets = closed_win_pkts;
+                oled_live.win_deauth = closed_win_deauth;
+                oled_live.win_targeted = closed_win_deauth_tgt;
+                oled_live.win_auth = closed_win_auth;
+                oled_live.win_twin = closed_win_twin;
+                if (attack_detected) {
+                    if (closed_win_deauth > 0 || closed_win_deauth_tgt > 0) {
+                        oled_live.attack_kind = OLED_ATTACK_DEAUTH;
+                    } else if (closed_win_twin > 0 || closed_win_rogue > 0) {
+                        oled_live.attack_kind = OLED_ATTACK_TWIN;
+                    } else if (closed_win_auth > 0) {
+                        oled_live.attack_kind = OLED_ATTACK_AUTH;
+                    } else {
+                        oled_live.attack_kind = OLED_ATTACK_ANOMALY;
+                    }
+                    oled_alert_snapshot = oled_live;
+                    oled_alert_until_us = attack_log_now_us + OLED_ALERT_HOLD_US;
+                    oled_recover_until_us = oled_alert_until_us + OLED_RECOVER_HOLD_US;
+                }
+#endif
                 if (attack_detected &&
                     (!was_attack_detected || last_attack_log_us == 0 ||
                      (attack_log_now_us - last_attack_log_us) >= 500000)) {
@@ -1251,26 +1283,50 @@ void nids_analysis_task(void* arg){
                          (unsigned long)rx_queue_drop_total,
                          (unsigned long)uart_mirror_drop_total);
                 printf("Stack remain: %lu bytes\n", (uint32_t)stack_mark);
-                if(!oled_inited){
+#if NIDS_OLED_ENABLE
+                if (!oled_init_attempted) {
+                    oled_init_attempted = true;
                     ESP_LOGI(TAG, "Attempting OLED init...");
                     oled_inited = oled_init();
-                    if(!oled_inited) {
-                        ESP_LOGW(TAG, "OLED init failed");
-                    } else {
+                    if (oled_inited) {
                         ESP_LOGI(TAG, "OLED init SUCCESS");
                     }
                 }
-                if(oled_inited){
+                if (oled_inited) {
                     int64_t now_ms = esp_timer_get_time() / 1000;
                     if ((now_ms - last_oled_update_ms) >= OLED_UPDATE_MIN_INTERVAL_MS) {
-                        uint8_t current_channel = 11;  // currently fixed at ch 11
-                        bool attack_flag = attack_detected; // driven by on-device inference
-                        oled_show_stats(wifi_connected, pkt_count, send_interval_packets, free_heap,
-                                       last_rssi, last_ipat, stack_mark, current_channel,
-                                       wifi_reconnect_count, queue_depth, attack_flag);
+                        int64_t now_us = now_ms * 1000;
+                        oled_status_t view = oled_live;
+                        if (now_us < oled_alert_until_us) {
+                            view = oled_alert_snapshot;
+                            view.state = OLED_STATE_ALERT;
+                            view.hold_seconds = (uint32_t)(
+                                (oled_alert_until_us - now_us + 999999) / 1000000);
+                        } else if (!wifi_connected) {
+                            view.state = OLED_STATE_LINK_DOWN;
+                        } else if (now_us < oled_recover_until_us) {
+                            view = oled_alert_snapshot;
+                            view.state = OLED_STATE_RECOVER;
+                        } else {
+                            view.state = OLED_STATE_READY;
+                        }
+                        view.wifi_connected = wifi_connected;
+                        view.collector_ready = udp_ready;
+#if NIDS_CALIB_ENABLE
+                        view.calib_armed = nids_calib_state() == NIDS_CALIB_ARMED;
+#else
+                        view.calib_armed = true;
+#endif
+                        view.channel = ap_channel;
+                        view.rssi = last_rssi;
+                        view.reconnects = wifi_reconnect_count;
+                        view.backlog = syslog_backlog_count;
+                        view.uart_drops = uart_mirror_drop_total;
+                        oled_show_status(&view);
                         last_oled_update_ms = now_ms;
                     }
                 }
+#endif
             }
             if(pkt_count >= 100000){ // reset count after 100k packets to avoid overflow
                 pkt_count = 0;
@@ -1304,7 +1360,8 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    // Initialize I2C for OLED (SDA=21, SCL=22)
+#if NIDS_OLED_ENABLE
+    // Initialize I2C only on boards configured with the optional OLED.
     i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = 21,
@@ -1316,6 +1373,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_0, &i2c_conf));
     ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, i2c_conf.mode, 0, 0, 0));
     ESP_LOGI(TAG, "I2C initialized for OLED");
+#else
+    ESP_LOGI(TAG, "OLED disabled at compile time (NIDS_OLED_ENABLE=0)");
+#endif
 
     // UART1 is needed only for dedicated serial output. The default window
     // mirror uses the existing UART0 programming/console cable.
