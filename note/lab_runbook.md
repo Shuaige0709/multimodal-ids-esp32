@@ -194,6 +194,8 @@ sudo -E ./host/attacks/attack_deauth.sh
 
 ## 5. 模式 S — targeted deauth 的 UART ground truth
 
+> 租屋處要收哪些、隔離、兩支 collector 誰開：見 [`collector.md`](collector.md)。
+
 ```text
 ① 保持韌體 SYSlOG_MODE=1；UART window mirror 預設已啟用，重新 flash
 ② 用原本燒錄 USB 線即可；關閉 idf.py monitor（COM port 不能同時被占用）

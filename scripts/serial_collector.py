@@ -21,6 +21,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
@@ -91,11 +92,89 @@ def parse_sd(line):
     return m.groupdict() if m else None
 
 
+def _windows_python_processes():
+    script = (
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.Name -match 'python' -and $_.CommandLine } | "
+        "Select-Object ProcessId,ParentProcessId,CommandLine | "
+        "ConvertTo-Json -Compress"
+    )
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    raw = (out.stdout or "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, dict):
+        return [data]
+    return list(data) if isinstance(data, list) else []
+
+
+def release_idf_monitor(port):
+    """Close an ESP-IDF monitor that is holding this COM port.
+
+    A flash still in progress (esptool) is left alone. Returns 'flashing',
+    'closed', or 'idle'.
+    """
+    if os.name != "nt":
+        return "idle"
+    port_re = re.compile(re.escape(port), re.I)
+    procs = _windows_python_processes()
+    if any(
+        port_re.search(p.get("CommandLine") or "")
+        and re.search(r"esptool|write_flash", p.get("CommandLine") or "", re.I)
+        for p in procs
+    ):
+        return "flashing"
+
+    pids = []
+    for proc in procs:
+        cmd = proc.get("CommandLine") or ""
+        if not port_re.search(cmd):
+            continue
+        if not re.search(r"idf_monitor|esp_idf_monitor|idf\.py", cmd, re.I):
+            continue
+        if re.search(r"idf\.py", cmd, re.I) and not re.search(r"\bmonitor\b", cmd, re.I):
+            continue
+        pid = int(proc.get("ProcessId") or 0)
+        if pid and pid != os.getpid():
+            pids.append(pid)
+    if not pids:
+        return "idle"
+
+    for pid in sorted(set(pids), reverse=True):
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    print(f"Closed ESP-IDF monitor on {port}")
+    time.sleep(0.5)
+    return "closed"
+
+
 def open_serial(port, baud, standby):
     """Open serial; in standby, retry until the port appears (no ESP32 reset dance)."""
     deadline = time.time() + (300 if standby else 15)
     last_err = None
+    told_flashing = False
     while time.time() < deadline:
+        state = release_idf_monitor(port)
+        if state == "flashing" and not told_flashing:
+            print(f"Flash still using {port}; waiting until it finishes")
+            told_flashing = True
         try:
             # Set control lines before opening where pyserial permits it. This
             # reduces accidental ESP32 reset through DTR/RTS on UART0 bridges.
