@@ -331,6 +331,17 @@ def start_receiver():
                 attack_type = label_data.get("attack_type", "UNKNOWN")
 
                 if status == "START":
+                    if current_attack is not None:
+                        if current_attack["type"] == attack_type:
+                            # Kali repeats the same UDP label for reliability.
+                            # Keep the first timestamp so the interval does not
+                            # shift by 0.2 s on every duplicate datagram.
+                            continue
+                        print(color_text(
+                            f"   ⚠️  ignoring START {attack_type}; "
+                            f"{current_attack['type']} is still active",
+                            YELLOW))
+                        continue
                     current_label = 1
                     current_attack_type = attack_type
                     attack_start_time = datetime.now()
@@ -340,12 +351,23 @@ def start_receiver():
                     sys.stdout.flush()
 
                 elif status == "STOP":
+                    if current_attack is None:
+                        # Duplicate STOP from the three-send reliability burst.
+                        continue
+                    if attack_type != current_attack["type"]:
+                        print(color_text(
+                            f"   ⚠️  ignoring STOP {attack_type}; "
+                            f"active attack is {current_attack['type']}",
+                            YELLOW))
+                        continue
                     stop_time = datetime.now()
                     duration = (stop_time - attack_start_time).total_seconds() if attack_start_time else 0
                     print(color_text(
                         f"✋ [ATTACK STOP] {current_attack_type} finished (Duration: {duration:.2f}s)",
                         GREEN))
-                    print(color_text(f"   📊 Over-the-air packets in this round: {attack_count}", YELLOW))
+                    print(color_text(
+                        "   Backlogged rows arriving later will be labeled by generation time.",
+                        YELLOW))
                     sys.stdout.flush()
 
                     if current_attack is not None:
@@ -355,6 +377,7 @@ def start_receiver():
 
                     current_label = 0
                     current_attack_type = "NONE"
+                    attack_start_time = None
 
             except json.JSONDecodeError:
                 if raw_msg == "START":

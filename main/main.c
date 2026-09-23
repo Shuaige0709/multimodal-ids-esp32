@@ -67,6 +67,13 @@ static const uint32_t SEND_RECOVER_THRESHOLD = 10;
 static const uint32_t SYSLOG_BACKLOG_MAX = SYSLOG_BACKLOG_CAP;
 static const uint32_t SYSLOG_FLUSH_BUDGET = DATASET_PROFILE ? 32 : 16;
 
+/* Lab ground-truth mirror. UDP remains active so reconnect/udpfail/backlog
+ * behavior stays deployment-realistic. Console mode uses the programming USB
+ * cable (UART0); set to 0 only when a dedicated USB-TTL adapter is on UART1. */
+#define UART_WINDOW_MIRROR_ENABLE 1
+#define UART_WINDOW_MIRROR_USE_CONSOLE 1
+#define UART_WINDOW_MIRROR_QUEUE_DEPTH 8
+
 static char syslog_backlog[SYSLOG_BACKLOG_CAP][SYSLOG_MSG_MAX];
 static uint32_t syslog_backlog_head = 0;
 static uint32_t syslog_backlog_tail = 0;
@@ -74,6 +81,8 @@ static uint32_t syslog_backlog_count = 0;
 static uint32_t syslog_backlog_dropped = 0;
 static uint32_t queue_peak_depth = 0;
 static volatile uint32_t rx_queue_drop_total = 0;
+static QueueHandle_t uart_mirror_queue = NULL;
+static volatile uint32_t uart_mirror_drop_total = 0;
 
 // --- Collector auto-discovery state (learned from UDP broadcast beacon) ---
 static volatile bool collector_discovered = false;
@@ -102,8 +111,12 @@ static volatile int last_raw_pred = 0;                        // latest nids_pre
 static volatile uint32_t last_inference_us = 0;               // most recent inference latency (microseconds)
 
 static bool send_syslog_udp(int sock, struct sockaddr_in *dest_addr, const char *buffer);
+#if SYSlOG_MODE == 2 || (UART_WINDOW_MIRROR_ENABLE && !UART_WINDOW_MIRROR_USE_CONSOLE)
 static void serial_init(void);
+#endif
 static void send_syslog_serial(const char *buffer);
+static void uart_mirror_task(void *arg);
+static void uart_mirror_enqueue(const char *buffer);
 static bool resolve_collector(struct sockaddr_in *dest_addr);
 static void wifi_reconnect_timer_cb(void *arg);
 static void schedule_wifi_reconnect(void);
@@ -652,6 +665,7 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
                     uint32_t win_pkts, double win_density,
                     uint32_t win_deauth, uint32_t win_probe,
                     uint32_t win_beacon, uint32_t win_auth,
+                    uint32_t win_deauth_tgt, uint32_t win_seq_jump,
                     uint32_t win_bssid, uint32_t win_twin, uint32_t win_rogue,
                     uint32_t win_mgmt, uint32_t win_data, uint32_t win_ctrl,
                     uint32_t win_bytes, uint32_t win_len_mean, uint32_t win_len_max,
@@ -691,7 +705,7 @@ void encode_rfc5424(char *buf, size_t size, nids_pkt_info_t *info, uint32_t heap
         (unsigned long)queue_peak_depth, (unsigned long)udp_send_failure_total,
         (unsigned long)syslog_backlog_count, (unsigned long)syslog_backlog_dropped,
         sta_mac_str, attack_detected ? 1 : 0,
-        (unsigned)info->deauth_targeted, (unsigned)info->seq_jump,
+        (unsigned)win_deauth_tgt, (unsigned)win_seq_jump,
         ap_bssid_str, (unsigned)ap_channel,
         (unsigned long)win_pkts, win_density,
         (int)last_raw_pred, nids_calib_state_str(), nids_calib_thr_tot(),
@@ -896,6 +910,8 @@ void nids_analysis_task(void* arg){
     char syslog_buffer[SYSLOG_MSG_MAX];
     uint32_t pkt_count = 0;
     int64_t last_attack_log_us = 0;
+    int64_t last_transport_log_us = 0;
+    int64_t last_status_log_us = 0;
 
     // OLED status counters
     static bool oled_inited = false;
@@ -987,6 +1003,7 @@ void nids_analysis_task(void* arg){
             double closed_win_density = 0.0;
             uint32_t closed_win_deauth = 0, closed_win_probe = 0;
             uint32_t closed_win_beacon = 0, closed_win_auth = 0;
+            uint32_t closed_win_deauth_tgt = 0, closed_win_seq_jump = 0;
             uint32_t closed_win_bssid = 0, closed_win_twin = 0, closed_win_rogue = 0;
             uint32_t closed_win_mgmt = 0, closed_win_data = 0, closed_win_ctrl = 0;
             uint32_t closed_win_bytes = 0, closed_win_len_mean = 0, closed_win_len_max = 0;
@@ -1001,6 +1018,8 @@ void nids_analysis_task(void* arg){
                 closed_win_probe = w_probe;
                 closed_win_beacon = w_beacon;
                 closed_win_auth = w_auth;
+                closed_win_deauth_tgt = w_deauth_tgt;
+                closed_win_seq_jump = w_seq_jump;
                 closed_win_bssid = s_win_bssid_n;
                 closed_win_twin = s_win_twin_n;
                 closed_win_rogue = s_win_rogue;
@@ -1074,6 +1093,22 @@ void nids_analysis_task(void* arg){
 #endif
                 }
 
+#if UART_WINDOW_MIRROR_ENABLE
+                /* One record per completed inference window. xQueueSend copies
+                 * the line and never blocks the analysis task. */
+                encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info,
+                               (uint32_t)f.heap, win_now_us / 1000,
+                               closed_win_pkts, closed_win_density,
+                               closed_win_deauth, closed_win_probe,
+                               closed_win_beacon, closed_win_auth,
+                               closed_win_deauth_tgt, closed_win_seq_jump,
+                               closed_win_bssid, closed_win_twin, closed_win_rogue,
+                               closed_win_mgmt, closed_win_data, closed_win_ctrl,
+                               closed_win_bytes, closed_win_len_mean, closed_win_len_max,
+                               closed_win_mgmt_bytes, closed_win_data_bytes);
+                uart_mirror_enqueue(syslog_buffer);
+#endif
+
                 // reset accumulator for next window
                 window_start_us = win_now_us;
                 w_total = w_beacon = w_deauth = w_probe = w_auth = 0;
@@ -1106,6 +1141,7 @@ void nids_analysis_task(void* arg){
                 uint32_t report_pkts;
                 double report_dens;
                 uint32_t report_deauth, report_probe, report_beacon, report_auth;
+                uint32_t report_deauth_tgt, report_seq_jump;
                 uint32_t report_bssid, report_twin, report_rogue;
                 uint32_t report_mgmt, report_data, report_ctrl;
                 uint32_t report_bytes, report_len_mean, report_len_max;
@@ -1117,6 +1153,8 @@ void nids_analysis_task(void* arg){
                     report_probe = closed_win_probe;
                     report_beacon = closed_win_beacon;
                     report_auth = closed_win_auth;
+                    report_deauth_tgt = closed_win_deauth_tgt;
+                    report_seq_jump = closed_win_seq_jump;
                     report_bssid = closed_win_bssid;
                     report_twin = closed_win_twin;
                     report_rogue = closed_win_rogue;
@@ -1139,6 +1177,8 @@ void nids_analysis_task(void* arg){
                     report_probe = w_probe;
                     report_beacon = w_beacon;
                     report_auth = w_auth;
+                    report_deauth_tgt = w_deauth_tgt;
+                    report_seq_jump = w_seq_jump;
                     report_bssid = s_win_bssid_n;
                     report_twin = s_win_twin_n;
                     report_rogue = s_win_rogue;
@@ -1155,6 +1195,7 @@ void nids_analysis_task(void* arg){
                 encode_rfc5424(syslog_buffer, sizeof(syslog_buffer), &info, free_heap, uptime_ms,
                                report_pkts, report_dens,
                                report_deauth, report_probe, report_beacon, report_auth,
+                               report_deauth_tgt, report_seq_jump,
                                report_bssid, report_twin, report_rogue,
                                report_mgmt, report_data, report_ctrl,
                                report_bytes, report_len_mean, report_len_max,
@@ -1175,30 +1216,40 @@ void nids_analysis_task(void* arg){
                 }
             }
 
-            if (!wifi_connected && pkt_count % 500 == 0) {
-                ESP_LOGW(TAG2, "WiFi down; buffering syslog (backlog=%lu)", syslog_backlog_count);
-            } else if (SYSlOG_MODE == 1 && pkt_count % 500 == 0) {
-                if (udp_ready) {
-                    ESP_LOGI(TAG2, "Syslog UDP → %s:%u (discovered=%d, backlog=%lu, ok=%lu, fail=%lu)",
-                             inet_ntoa(dest_addr.sin_addr),
-                             (unsigned)ntohs(dest_addr.sin_port),
-                             collector_discovered ? 1 : 0,
-                             (unsigned long)syslog_backlog_count,
-                             (unsigned long)udp_send_success_total,
-                             (unsigned long)udp_send_failure_total);
-                } else {
-                    ESP_LOGW(TAG2, "Waiting for collector beacon on UDP :%d (backlog=%lu)",
-                             DISCOVERY_PORT, syslog_backlog_count);
+            int64_t status_now_us = esp_timer_get_time();
+            if (last_transport_log_us == 0 ||
+                status_now_us - last_transport_log_us >= 5000000) {
+                last_transport_log_us = status_now_us;
+                if (!wifi_connected) {
+                    ESP_LOGW(TAG2, "WiFi down; buffering syslog (backlog=%lu)", syslog_backlog_count);
+                } else if (SYSlOG_MODE == 1) {
+                    if (udp_ready) {
+                        ESP_LOGI(TAG2, "Syslog UDP → %s:%u (discovered=%d, backlog=%lu, ok=%lu, fail=%lu)",
+                                 inet_ntoa(dest_addr.sin_addr),
+                                 (unsigned)ntohs(dest_addr.sin_port),
+                                 collector_discovered ? 1 : 0,
+                                 (unsigned long)syslog_backlog_count,
+                                 (unsigned long)udp_send_success_total,
+                                 (unsigned long)udp_send_failure_total);
+                    } else {
+                        ESP_LOGW(TAG2, "Waiting for collector beacon on UDP :%d (backlog=%lu)",
+                                 DISCOVERY_PORT, syslog_backlog_count);
+                    }
                 }
             }
 
-            if(pkt_count % 100 == 0){ // print info every 100 packets
+            /* Time-based console logging prevents a flood from consuming UART0
+             * bandwidth needed by the per-window ground-truth mirror. */
+            if (last_status_log_us == 0 ||
+                status_now_us - last_status_log_us >= 1000000) {
+                last_status_log_us = status_now_us;
                 uint32_t free_heap = esp_get_free_heap_size();
-                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu, infer=%lu us, attack=%d, hips=%lu, qdrop=%lu)",
+                ESP_LOGI(TAG2, "Processed %lu packets so far (send interval %lu, heap=%lu, infer=%lu us, attack=%d, hips=%lu, qdrop=%lu, uartdrop=%lu)",
                          pkt_count, send_interval_packets, free_heap,
                          (unsigned long)last_inference_us, attack_detected ? 1 : 0,
                          (unsigned long)mitigation_events_total,
-                         (unsigned long)rx_queue_drop_total);
+                         (unsigned long)rx_queue_drop_total,
+                         (unsigned long)uart_mirror_drop_total);
                 printf("Stack remain: %lu bytes\n", (uint32_t)stack_mark);
                 if(!oled_inited){
                     ESP_LOGI(TAG, "Attempting OLED init...");
@@ -1209,7 +1260,7 @@ void nids_analysis_task(void* arg){
                         ESP_LOGI(TAG, "OLED init SUCCESS");
                     }
                 }
-                if(oled_inited && (pkt_count % 200 == 0)){
+                if(oled_inited){
                     int64_t now_ms = esp_timer_get_time() / 1000;
                     if ((now_ms - last_oled_update_ms) >= OLED_UPDATE_MIN_INTERVAL_MS) {
                         uint8_t current_channel = 11;  // currently fixed at ch 11
@@ -1266,8 +1317,11 @@ void app_main(void) {
     ESP_ERROR_CHECK(i2c_driver_install(I2C_NUM_0, i2c_conf.mode, 0, 0, 0));
     ESP_LOGI(TAG, "I2C initialized for OLED");
 
-    // Initialize UART for optional serial syslog output (USB-UART)
+    // UART1 is needed only for dedicated serial output. The default window
+    // mirror uses the existing UART0 programming/console cable.
+#if SYSlOG_MODE == 2 || (UART_WINDOW_MIRROR_ENABLE && !UART_WINDOW_MIRROR_USE_CONSOLE)
     serial_init();
+#endif
 
     // init TCP/IP stack
     ESP_ERROR_CHECK(esp_netif_init());
@@ -1285,6 +1339,13 @@ void app_main(void) {
     // create a queue to store packet info for processing
     pkt_info_queue = xQueueCreate(100, sizeof(nids_pkt_info_t));
     ESP_ERROR_CHECK(pkt_info_queue ? ESP_OK : ESP_ERR_NO_MEM);
+#if UART_WINDOW_MIRROR_ENABLE
+    uart_mirror_queue = xQueueCreate(UART_WINDOW_MIRROR_QUEUE_DEPTH, SYSLOG_MSG_MAX);
+    ESP_ERROR_CHECK(uart_mirror_queue ? ESP_OK : ESP_ERR_NO_MEM);
+    BaseType_t mirror_task_created = xTaskCreate(
+        uart_mirror_task, "uart_window_mirror", 4096, NULL, 2, NULL);
+    ESP_ERROR_CHECK(mirror_task_created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+#endif
     BaseType_t task_created = xTaskCreate(nids_analysis_task, "nids_analysis_task", 6144, NULL, 5, NULL);
     ESP_ERROR_CHECK(task_created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
@@ -1405,6 +1466,7 @@ void app_main(void) {
 #define NIDS_UART_RX_PIN 16
 #define NIDS_UART_BAUD 115200
 
+#if SYSlOG_MODE == 2 || (UART_WINDOW_MIRROR_ENABLE && !UART_WINDOW_MIRROR_USE_CONSOLE)
 static void serial_init(void)
 {
     const uart_config_t uart_config = {
@@ -1419,6 +1481,7 @@ static void serial_init(void)
     uart_param_config(NIDS_UART_PORT, &uart_config);
     uart_set_pin(NIDS_UART_PORT, NIDS_UART_TX_PIN, NIDS_UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 }
+#endif
 
 static void send_syslog_serial(const char *buffer)
 {
@@ -1428,4 +1491,32 @@ static void send_syslog_serial(const char *buffer)
     bool need_nl = (len == 0 || buffer[len-1] != '\n');
     uart_write_bytes(NIDS_UART_PORT, buffer, len);
     if (need_nl) uart_write_bytes(NIDS_UART_PORT, "\n", 1);
+}
+
+static void uart_mirror_enqueue(const char *buffer)
+{
+#if UART_WINDOW_MIRROR_ENABLE
+    if (buffer == NULL || uart_mirror_queue == NULL ||
+        xQueueSend(uart_mirror_queue, buffer, 0) != pdTRUE) {
+        uart_mirror_drop_total++;
+    }
+#else
+    (void)buffer;
+#endif
+}
+
+static void uart_mirror_task(void *arg)
+{
+    (void)arg;
+    char line[SYSLOG_MSG_MAX];
+    while (1) {
+        if (xQueueReceive(uart_mirror_queue, line, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+#if UART_WINDOW_MIRROR_USE_CONSOLE
+        printf("[NIDS_WINDOW] %s\n", line);
+#else
+        send_syslog_serial(line);
+#endif
+    }
 }

@@ -289,29 +289,40 @@ send_label() {
   # (Bash nc -u was the unreliable rewrite — not missing ACK protocol.)
   local status="$1"
   local attack_type="${2:-NONE}"
-  local host repeats
+  local host repeats serial_host serial_port
   host="$(get_label_host)"
   repeats="${NIDS_LABEL_REPEATS:-3}"
+  serial_host="${NIDS_SERIAL_LABEL_HOST:-$host}"
+  serial_port="${NIDS_SERIAL_LABEL_PORT:-}"
   echo "[netconfig] label ${status} (${attack_type}) -> ${host}:${LABEL_PORT}"
+  if [[ -n "$serial_port" && ( "$serial_host" != "$host" || "$serial_port" != "$LABEL_PORT" ) ]]; then
+    echo "[netconfig] label mirror -> ${serial_host}:${serial_port}"
+  fi
   if [[ -z "$host" ]]; then
     echo "[netconfig] ERROR: empty label host — export NIDS_LABEL_HOST=10.0.0.2 (Pi) or sync live_state" >&2
     return 1
   fi
 
-  python3 - "$host" "$LABEL_PORT" "$status" "$attack_type" "$repeats" <<'PY'
+  python3 - "$host" "$LABEL_PORT" "$status" "$attack_type" "$repeats" "$serial_host" "$serial_port" <<'PY'
 import json, socket, sys, time
 host, port, status, atk, repeats = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], int(sys.argv[5])
+serial_host = sys.argv[6]
+serial_port = int(sys.argv[7]) if sys.argv[7] else None
 payload = json.dumps({
     "status": status,
     "attack_type": atk,
     "timestamp": time.time(),
 }).encode()
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+destinations = [(host, port)]
+if serial_port is not None and (serial_host, serial_port) != (host, port):
+    destinations.append((serial_host, serial_port))
 for _ in range(max(1, repeats)):
-    try:
-        sock.sendto(payload, (host, port))
-    except OSError as e:
-        print(f"[netconfig] label send failed: {e}", file=sys.stderr)
+    for destination_host, destination_port in destinations:
+        try:
+            sock.sendto(payload, (destination_host, destination_port))
+        except OSError as e:
+            print(f"[netconfig] label send to {destination_host}:{destination_port} failed: {e}", file=sys.stderr)
     time.sleep(0.2)
 sock.close()
 PY
