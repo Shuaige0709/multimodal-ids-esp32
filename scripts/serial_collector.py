@@ -143,9 +143,14 @@ def release_idf_monitor(port):
         cmd = proc.get("CommandLine") or ""
         if not port_re.search(cmd):
             continue
-        if not re.search(r"idf_monitor|esp_idf_monitor|idf\.py", cmd, re.I):
-            continue
-        if re.search(r"idf\.py", cmd, re.I) and not re.search(r"\bmonitor\b", cmd, re.I):
+        # idf_monitor.py's own command line also mentions idf.py (the --make
+        # helper). That must still count as a monitor. A real flash/build
+        # command mentions idf.py without idf_monitor and is left alone.
+        is_monitor = re.search(r"idf_monitor|esp_idf_monitor", cmd, re.I)
+        is_idf_py_monitor = re.search(r"idf\.py", cmd, re.I) and re.search(
+            r"(?<![\w])monitor(?![\w])", cmd, re.I
+        )
+        if not (is_monitor or is_idf_py_monitor):
             continue
         pid = int(proc.get("ProcessId") or 0)
         if pid and pid != os.getpid():
@@ -309,8 +314,8 @@ def main():
     last_uptime_sec = 0.0
     print(f"Listening for START/STOP labels on UDP :{args.label_port}")
     print(
-        f"On Kali: export NIDS_SERIAL_LABEL_PORT={args.label_port} "
-        "before attack_deauth.sh"
+        f"Attack scripts mirror START/STOP to UDP :{args.label_port} "
+        "on the VMnet host. No export needed."
     )
     print(f"Raw console log: {raw_log_path}")
     if args.standby:
