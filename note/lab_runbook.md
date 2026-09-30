@@ -194,26 +194,9 @@ sudo -E ./host/attacks/attack_deauth.sh
 
 ## 5. 模式 S — targeted deauth 的 UART ground truth
 
-> 租屋處要收哪些、隔離、兩支 collector 誰開：見 [`collector.md`](collector.md)。
+> 租屋處要收哪些、兩支 collector 的開啟順序：照 [`collector.md`](collector.md)。Deauth / disassoc 才開 Windows 的 serial collector，而且要在那 3 分鐘正常開始之前就開著。
 
-```text
-① 保持韌體 SYSlOG_MODE=1；UART window mirror 預設已啟用，重新 flash
-② 用原本燒錄 USB 線即可；關閉 idf.py monitor（COM port 不能同時被占用）
-③ Windows PowerShell：
-   & "$env:USERPROFILE\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe" `
-     scripts/serial_collector.py --port COMx --standby --out data/raw/nids_serial.csv
-④ UDP collector 照常開著，保留真實 reconnect / udpfail / backlog 行為
-⑤ Kali：export NIDS_SERIAL_LABEL_HOST=<Windows 可由 Kali 連到的 IP>
-         export NIDS_SERIAL_LABEL_PORT=10000
-⑥ Kali：sudo -E ./host/attacks/attack_deauth.sh
-```
-
-Serial collector 必須在 NORMAL 階段就開啟並保持開啟。UART0 會混有 ESP-IDF
-console logs；CSV 只保存 `[meta@...]` window rows，全部 console 訊息另存成
-`<out>.log`，可查 reset/disconnect reason。若 UDP 與 UART collector 在同一台主機，
-`NIDS_SERIAL_LABEL_HOST` 可省略。若要完全獨立、避免
-console 流量，可把 `UART_WINDOW_MIRROR_USE_CONSOLE` 設為 `0`，再用 USB-TTL
-接 ESP32 GPIO17 (TX) 與 GND；一般實驗先不用買。
+USB 紀錄會混進 ESP-IDF 的主控台訊息。CSV 只留每個視窗那一列，全部主控台輸出另存在 `<out>.log`。一般實驗用燒錄那條 USB 線即可。
 
 ### OLED 有無的板子共用韌體
 

@@ -54,6 +54,27 @@ get_label_host() {
   echo "192.168.124.1"
 }
 
+get_serial_label_host() {
+  # Windows USB collector. Not the Pi: Pi labels stay on get_label_host():9999.
+  # Override with NIDS_SERIAL_LABEL_HOST or NIDS_WIN_GATEWAY when VMnet1 is not .1.
+  if [[ -n "${NIDS_SERIAL_LABEL_HOST:-}" ]]; then
+    echo "$NIDS_SERIAL_LABEL_HOST"
+    return 0
+  fi
+  if [[ -n "${NIDS_WIN_GATEWAY:-}" ]]; then
+    echo "$NIDS_WIN_GATEWAY"
+    return 0
+  fi
+  local iface cidr
+  iface="${NIDS_HOSTONLY_IFACE:-eth0}"
+  cidr="$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{print $4; exit}')"
+  if [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+/ ]]; then
+    echo "${BASH_REMATCH[1]}.1"
+    return 0
+  fi
+  echo "192.168.124.1"
+}
+
 # Back-compat name used by older snippets (resolved once at source time if file exists)
 LABEL_HOST="$(get_label_host)"
 
@@ -292,8 +313,8 @@ send_label() {
   local host repeats serial_host serial_port
   host="$(get_label_host)"
   repeats="${NIDS_LABEL_REPEATS:-3}"
-  serial_host="${NIDS_SERIAL_LABEL_HOST:-$host}"
-  serial_port="${NIDS_SERIAL_LABEL_PORT:-}"
+  serial_host="$(get_serial_label_host)"
+  serial_port="${NIDS_SERIAL_LABEL_PORT:-10000}"
   echo "[netconfig] label ${status} (${attack_type}) -> ${host}:${LABEL_PORT}"
   if [[ -n "$serial_port" && ( "$serial_host" != "$host" || "$serial_port" != "$LABEL_PORT" ) ]]; then
     echo "[netconfig] label mirror -> ${serial_host}:${serial_port}"
