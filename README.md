@@ -1,6 +1,6 @@
 # ESP32 Lightweight Multimodal NIDS
 
-Edge multimodal NIDS on ESP32 (100 ms windows + on-device tree).  
+Edge multimodal NIDS on ESP32. `main.c` only starts the firmware. The default on-device decision is M3 (`main/m3_model.h`); the August 9 `model.h` tree remains the fallback when `NIDS_M3_ENABLE` is 0.  
 **Attacks: shell only. Collector / train: Python.**
 
 **Winston 任務：** [`docs/HELP.md`](docs/HELP.md)  

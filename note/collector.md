@@ -1,14 +1,18 @@
 # 租屋處這輪要收什麼
 
+> **2026-10-14 後續重錄注意**：本文件下方的「Probe / Evil Twin 只開 Pi」僅適用於 2026-10-01 已完成的八場。新的 Probe / Evil Twin 獨立完整時序重錄改為 **Windows UART 主檔、Pi 不用開**；請看 [`private/collection/probe_twin_uart_repeat_20261014.md`](private/collection/probe_twin_uart_repeat_20261014.md)。
+
+> 2026-10-01：下列八場已完成。下一場 AUTH 改用完整 USB/UART，請直接看 [`private/collection/auth_uart_holdout_20261002.md`](private/collection/auth_uart_holdout_20261002.md)；原本「USB 只開第 2–4 場」只適用於已完成的八場。
+
 這一輪只收下面這些。每一場單獨一個檔，不要把好幾種攻擊錄在一起。
 
 
 | 順序  | 這一場                | 誰在錄                  | 檔案                                                     |
 | --- | ------------------ | -------------------- | ------------------------------------------------------ |
 | 1   | 什麼都不打，15–20 分鐘     | 只開 Pi                | Pi 自動存 `data/raw/nids_dataset_日期時間.csv`，整檔都是正常         |
-| 2   | Deauth，約 60 秒      | Pi，再加上 Windows 的 USB | Pi 一個 CSV；Windows 另存 `data/raw/nids_serial_deauth.csv` |
-| 3   | Disassoc，約 90 秒    | 同上，Pi + USB          | 換新檔名。這一輪要收兩場                                           |
-| 4   | Disassoc，再一場       | 同上                   | 再換一個檔名，不要覆蓋上一場                                         |
+| 2   | Deauth，約 60 秒      | Pi，再加上 Windows 的 USB | Pi 一個 CSV；Windows 自動存 `data/raw/nids_serial_日期時間.csv` |
+| 3   | Disassoc，約 90 秒    | 同上，Pi + USB          | 重新開 serial collector，它會自己開新檔。這一輪要收兩場                    |
+| 4   | Disassoc，再一場       | 同上                   | 再重開一次，又是一個新檔                                           |
 | 5   | Probe flood，約 45 秒 | 只開 Pi                | 通常不會把板子踢下線                                             |
 | 6   | Evil twin，約 60 秒   | 只開 Pi                | 可做可不做。看畫面上有沒有第二個同名熱點                                   |
 | 7   | Auth flood，約 60 秒  | 只開 Pi                | 看這顆 AP 會不會出現大量認證幀                                      |
@@ -77,14 +81,10 @@ python3 host/collector/nids_collector.py
 
 ```powershell
 & "$env:USERPROFILE\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe" `
-  scripts/serial_collector.py --port COM3 --standby --out data/raw/nids_serial_deauth.csv
+  scripts/serial_collector.py --port COM3 --standby
 ```
 
-把 `COM5` 換成你的埠。每一場的 `--out` 要換檔名，否則會覆蓋上一場。建議：
-
-- 第一場 deauth：`data/raw/nids_serial_deauth.csv`
-- 第一場 disassoc：`data/raw/nids_serial_disassoc1.csv`
-- 第二場 disassoc：`data/raw/nids_serial_disassoc2.csv`
+`COM3` 是這台板子的埠。不用加 `--out`。每次啟動會新寫 `data/raw/nids_serial_日期時間.csv`，不會蓋掉上一場。視窗裡的 `CSV:` 那一行就是這場的檔名。
 
 視窗出現這三行才算開好：
 
@@ -140,10 +140,10 @@ sudo -E ./host/attacks/prepare_wifi.sh managed
 
 ### 6. 關掉，留下兩個檔
 
-先 Ctrl+C 停 Pi，得到一個 `nids_dataset_*.csv`。  
-再 Ctrl+C 停 Windows，得到你 `--out` 的那個 CSV。
+先 Ctrl+C 停 Pi，得到一個 `nids_dataset_日期時間.csv`。  
+再 Ctrl+C 停 Windows，得到剛才 `CSV:` 印出的那個檔。
 
-這兩個檔都留著，不要合成一個。下一場重新開 Pi collector；deauth / disassoc 也要重新開 serial collector，並且換 `--out`。
+這兩個檔都留著，不要合成一個。下一場重新開 Pi collector，也重新開 serial collector。兩邊都會自己用新檔名。
 
 ---
 

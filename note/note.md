@@ -13,7 +13,7 @@
 - **NIDS**：802.11 特徵（subtype、RSSI/SNR、封包密度…）
 - **HIDS**：主機狀態（heap、reconnect、UDP fail、backlog…）
 
-以 **100ms 時間窗** 聚合 → 輕量決策樹（`model.h`）在板端推論 → 可選 **HIPS**（黑名單 / 暫斷隔離）。
+以 **100ms 時間窗** 聚合。目前預設判定是 **M3**（`main/m3_model.h`，`NIDS_M3_ENABLE=1`）；8 月 9 日的 `model.h` 只在把該開關設為 0 時回到舊樹。HIPS 仍預設關閉。
 
 **不需要樹莓派當「唯一 collector」。** Collector 可跑在 Windows/Kali PC。  
 但若實驗是 **deauth 會把 Wi-Fi 打斷**，單靠「同一條 Wi-Fi 上的 UDP syslog」**不能**保證攻擊當下即時送達——這點見下方 §2.1。
@@ -124,9 +124,11 @@ Kali：第一次接 USB 網卡／開 monitor 建議 VMware 視窗直接操作；
 
 ```
 main/                      ESP-IDF 韌體（根目錄給 idf.py，勿亂搬）
-  net_config.h             Wi-Fi / discovery / HIPS
-  main.c                   sniffer、discovery、100ms 窗、推論、HIPS
-  model.h                  m2cgen 產生，勿手改
+  net_config.h             Wi-Fi / discovery / HIPS / NIDS_M3_ENABLE
+  main.c                   只負責開機順序；推論不在這裡
+  nids_engine.c            100ms 視窗、呼叫 M3 或舊樹
+  nids_m3.c / m3_model.h   目前預設的 M3 判定（產生器 export_m3_model）
+  model.h                  8 月 9 日舊樹；M3 關閉時才使用，勿手改
 
 host/
   paths.py                 共用路徑（data/、live_state、model.h）
@@ -245,11 +247,11 @@ python host/train/analyze_and_train.py
 
 **板上推論：**
 
-`main.c` sniffer → 100ms 聚合填 `nids_window_features_t` → `nids_predict()`（`model.h`）→ OLED / `nids_mitigate()`（HIPS）
+`main.c` 只啟動模組 → `sniffer.c` → `nids_engine.c` 每 100ms 聚合成視窗 → 預設 `nids_m3_step()`（`m3_model.h`）→ OLED。`NIDS_M3_ENABLE=0` 才改走 `nids_predict()`（`model.h`）與舊校正器。HIPS 預設關閉。
 
 **資料進 PC：**
 
-`main.c` syslog UDP → `host/collector/nids_collector.py` → `data/raw/*.csv` + `data/live_state.json`
+`syslog_client.c` 的 UDP，或 USB 的 `scripts/serial_collector.py` → `data/raw/*.csv`。M3 視窗多一個 `m3src`。
 
 **標註：**
 
@@ -257,7 +259,7 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 
 **訓練上板：**
 
-`aggregate_windows.py` → `data/windows/` → `analyze_and_train.py` → `main/model.h` → flash
+M3 樹由 `host/train/export_m3_model_20261021.py` 產生 `main/m3_model.h`。`analyze_and_train.py` 仍只重產舊的 `model.h`，不會取代目前預設的 M3。
 
 特徵欄位單一真相：`host/train/nids_features.py`（改欄位必須同步韌體填值與重訓）。
 
@@ -266,7 +268,7 @@ Kali `*.sh` → `send_label` → collector control port → CSV 的 `label` / `a
 ## 10. Git / 協作注意
 
 - **勿 commit：** 試收 `data/raw|windows`（基線除外）、`live_state.json`、`build/`、`sdkconfig`、帳密
-- `model.h` 由訓練腳本產生；PR 時說明用哪份資料集訓練
+- 目前預設上板的是 `m3_model.h`；`model.h` 是舊樹。PR 要寫明改的是哪一份、用哪批資料產生
 - 組員：`git pull` 後 `chmod +x host/attacks/*.sh scripts/*.sh`；AP 煙測任務 → [`docs/HELP.md`](../docs/HELP.md)
 
 ---

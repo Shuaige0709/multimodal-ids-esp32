@@ -1,5 +1,7 @@
 # 實測 Runbook：誰開什麼、何時開
 
+> **2026-10-14 Probe / Evil Twin 獨立重錄**：使用 [UART-only 專用手冊](private/collection/probe_twin_uart_repeat_20261014.md)；本頁舊的 Mode P / S 分工描述先前八場，不適用於這兩場重錄。
+
 > 和 `note.md`（架構 / 設計說明）分開。  
 > 這份給**組員共用**：實驗日每台機器依序做什麼。  
 > 個人出發清單／本機帳密 → `note/private/`（不上 Git）。
@@ -268,9 +270,10 @@ Mode P 若 Pi eth0 不在 VMnet1 上（例如另接 Windows `10.0.0.x`），見�
 ## 8. 收完資料才跑（離線）
 
 ```text
-aggregate_windows.py  →  100ms 視窗 CSV
-analyze_and_train.py  →  model.h + docs/figures/
-idf.py flash          →  板上用新模型
+目前板上預設是 M3，不是 analyze_and_train.py 產生的 model.h。
+export_m3_model_20261021.py  →  main/m3_model.h
+idf.py flash                  →  要燒錄後，板子才會從舊韌體換成這份 M3
+NIDS_M3_ENABLE=0              →  才回到 8 月 9 日 model.h 與舊校正器
 ```
 
 與 Pi/Kali 是否開機無關；通常在 Windows 跑。
@@ -284,7 +287,7 @@ idf.py flash          →  板上用新模型
 | Pi 正式收一場 | Pi: `nids_collector.py`；Win: flash；Kali: NORMAL→攻擊，label→live_state |
 | Windows 快速 SYN | Win: `session_windows.ps1` + flash；Kali: syn_flood |
 | 給 Kali 目標 | `print_live_targets` 或讀 `live_state.json` |
-| 訓練出新 model | aggregate_windows → analyze_and_train |
+| 看目前板上模型 | 預設 M3：`m3_model.h`；`NIDS_M3_ENABLE=0` 才用舊 `model.h` |
 | 只改程式 | 不必開 session / collector / 攻擊 |
 
 ---
