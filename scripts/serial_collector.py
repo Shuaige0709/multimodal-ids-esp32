@@ -11,7 +11,10 @@ The default label port is 10000 so this can run beside the UDP collector on
 
 Usage:
   pip install pyserial
-  python scripts/serial_collector.py --port COM3 --standby --out data/raw/serial.csv
+  python scripts/serial_collector.py --port COM3 --standby
+
+Each run writes data/raw/nids_serial_YYYYMMDD_HHMMSS.csv. An existing --out
+path is left alone and a new timestamped file is used instead.
 
 The ESP-IDF Python environment already includes pyserial on the development PC.
 """
@@ -56,6 +59,7 @@ SD_RE = re.compile(
     r"(?: thr=\"(?P<thr>[^\"]+)\")?"
     r"(?: gw_mac=\"(?P<gw_mac>[^\"]+)\")?"
     r"(?: gw_flip=\"(?P<gw_flip>[^\"]+)\")?"
+    r"(?: m3src=\"(?P<m3src>[^\"]+)\")?"
     r"(?: win_deauth=\"(?P<win_deauth>[^\"]+)\")?"
     r"(?: win_probe=\"(?P<win_probe>[^\"]+)\")?"
     r"(?: win_beacon=\"(?P<win_beacon>[^\"]+)\")?"
@@ -83,7 +87,7 @@ HEADER = [
     "win_twin", "win_rogue",
     "win_mgmt", "win_data", "win_ctrl", "win_bytes",
     "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
-    "gw_mac", "gw_flip", "label", "attack_type", "timestamp", "raw",
+    "gw_mac", "gw_flip", "m3src", "label", "attack_type", "timestamp", "raw",
 ]
 
 
@@ -272,16 +276,36 @@ def canonical_row(sd, label, attack_type, timestamp, raw):
         sd.get("win_mgmt"), sd.get("win_data"), sd.get("win_ctrl"),
         sd.get("win_bytes"), sd.get("win_len_mean"), sd.get("win_len_max"),
         sd.get("win_mgmt_bytes"), sd.get("win_data_bytes"),
-        sd.get("gw_mac"), sd.get("gw_flip"), label, attack_type,
+        sd.get("gw_mac"), sd.get("gw_flip"), sd.get("m3src"), label, attack_type,
         timestamp.isoformat(), raw,
     ]
+
+
+def choose_out_path(requested):
+    """New timestamped CSV, same idea as the Pi collector.
+
+    A requested path that already exists is not truncated.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    auto = os.path.join(_ROOT, "data", "raw", f"nids_serial_{stamp}.csv")
+    if not requested:
+        return auto
+    if os.path.exists(requested):
+        print(f"{requested} already exists; writing {auto} instead")
+        return auto
+    return requested
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", required=True, help="Serial port, e.g. COM3 or /dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--out", default="data/raw/serial_capture.csv")
+    p.add_argument(
+        "--out",
+        default=None,
+        help="CSV path. Default is data/raw/nids_serial_YYYYMMDD_HHMMSS.csv. "
+        "An existing file is not overwritten.",
+    )
     p.add_argument(
         "--raw-log",
         default=None,
@@ -298,6 +322,7 @@ def main():
         help="Open early and keep the port open across Wi-Fi disconnects",
     )
     args = p.parse_args()
+    args.out = choose_out_path(args.out)
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
     if out_dir:
@@ -317,6 +342,7 @@ def main():
         f"Attack scripts mirror START/STOP to UDP :{args.label_port} "
         "on the VMnet host. No export needed."
     )
+    print(f"CSV: {args.out}")
     print(f"Raw console log: {raw_log_path}")
     if args.standby:
         print("Standby: leave this running; start deauth when ready. Ctrl+C to stop.")

@@ -41,7 +41,9 @@ WINDOW_FEATURES = [
     "backlog",          # HIDS: syslog backlog depth
 ]
 
-# Sidecar HIDS: gateway MAC flips (syslog gw_flip). NOT in model.h until smoke passes.
+# Sidecar HIDS: cumulative gateway MAC flips (syslog gw_flip). Use only its
+# positive per-run delta for window/event analysis; the cumulative counter must
+# not be trained as though every later window contained a new flip.
 HIDS_GW_FEATURES = [
     "gw_mac_flip",
 ]

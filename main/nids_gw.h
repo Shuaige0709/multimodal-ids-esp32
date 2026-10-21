@@ -8,6 +8,7 @@
 #define NIDS_GW_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,7 @@ void nids_gw_poll(void);
 uint32_t nids_gw_flip(void);
 /** "AA:BB:..." or "-" if unknown. Valid until next poll. */
 const char *nids_gw_mac_str(void);
+bool nids_gw_mac_copy(uint8_t out[6]);
 
 #ifdef __cplusplus
 }

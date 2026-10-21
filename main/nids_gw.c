@@ -106,3 +106,10 @@ const char *nids_gw_mac_str(void)
     }
     return s_mac_str;
 }
+
+bool nids_gw_mac_copy(uint8_t out[6])
+{
+    if (!s_have_mac) return false;
+    memcpy(out, s_mac, 6);
+    return true;
+}

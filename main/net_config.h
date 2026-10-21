@@ -51,6 +51,12 @@
 #define HIPS_ENABLE_DISCONNECT 0
 #define HIPS_DISCONNECT_COOLDOWN_MS 10000
 
+/* M3 candidate: exported counts+Twin tree with RF, Beacon and gateway-MAC paths.
+ * Offline parity is verified; board behavior still needs a short smoke test. */
+#ifndef NIDS_M3_ENABLE
+#define NIDS_M3_ENABLE 1
+#endif
+
 /*
  * On-device IDLE baseline calibration (post-filter; does not change model.h).
  * First NIDS_CALIB_MS after analysis start: learn busy-air p90 of total_packets;
@@ -76,6 +82,28 @@
 #endif
 #ifndef NIDS_CALIB_DEAUTH_STREAK
 #define NIDS_CALIB_DEAUTH_STREAK 1
+#endif
+
+/*
+ * Experimental AUTH_FLOOD semantic sidecar.
+ *
+ * The 2026-10-13 independent UART holdout validated the policy selected from
+ * the 2026-10-01 development batch (98.6% attack-window recall, 1.33 s first
+ * alarm). Keep this OFF until the separate board-enabled validation run. When
+ * enabled, the sidecar accepts an AUTH event after at least HITS of the latest
+ * WINDOW 100 ms windows meet the packet threshold. It does not modify model.h.
+ */
+#ifndef NIDS_AUTH_SIDECAR_ENABLE
+#define NIDS_AUTH_SIDECAR_ENABLE 0
+#endif
+#ifndef NIDS_AUTH_SIDECAR_MIN_PACKETS
+#define NIDS_AUTH_SIDECAR_MIN_PACKETS 16
+#endif
+#ifndef NIDS_AUTH_SIDECAR_HITS
+#define NIDS_AUTH_SIDECAR_HITS 3
+#endif
+#ifndef NIDS_AUTH_SIDECAR_WINDOW
+#define NIDS_AUTH_SIDECAR_WINDOW 5
 #endif
 #ifndef NIDS_CALIB_CLEAR_STREAK
 #define NIDS_CALIB_CLEAR_STREAK 2

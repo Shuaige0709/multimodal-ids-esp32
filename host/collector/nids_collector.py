@@ -66,6 +66,7 @@ regex = re.compile(
     r'(?: thr="(?P<thr>[^"]+)")?'
     r'(?: gw_mac="(?P<gw_mac>[^"]+)")?'
     r'(?: gw_flip="(?P<gw_flip>[^"]+)")?'
+    r'(?: m3src="(?P<m3src>[^"]+)")?'
     r'(?: win_deauth="(?P<win_deauth>[^"]+)")?'
     r'(?: win_probe="(?P<win_probe>[^"]+)")?'
     r'(?: win_beacon="(?P<win_beacon>[^"]+)")?'
@@ -94,9 +95,9 @@ _META_KEYS = (
     "win_mgmt", "win_data", "win_ctrl", "win_bytes",
     "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
     "pred", "calib", "thr",
-    "gw_mac", "gw_flip",
+    "gw_mac", "gw_flip", "m3src",
 )
-_KV_RE = re.compile(r'([a-z_]+)="([^"]*)"')
+_KV_RE = re.compile(r'([a-z0-9_]+)="([^"]*)"')
 _PEN_RE = re.compile(r'\[meta@(\S+)')
 
 
@@ -119,7 +120,7 @@ def parse_syslog_meta(log_line):
                 "win_mgmt", "win_data", "win_ctrl", "win_bytes",
                 "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
                 "pred", "calib", "thr",
-                "gw_mac", "gw_flip")
+                "gw_mac", "gw_flip", "m3src")
     for key in _META_KEYS:
         pairs.setdefault(key, "" if key in str_keys else "0")
     return pairs, True
@@ -427,7 +428,7 @@ def start_receiver():
             "win_twin", "win_rogue",
             "win_mgmt", "win_data", "win_ctrl", "win_bytes",
             "win_len_mean", "win_len_max", "win_mgmt_bytes", "win_data_bytes",
-            "gw_mac", "gw_flip",
+            "gw_mac", "gw_flip", "m3src",
             "label", "attack_type", "timestamp"
         ])
 
@@ -530,7 +531,7 @@ def start_receiver():
                         d.get("win_bytes", ""),
                         d.get("win_len_mean", ""), d.get("win_len_max", ""),
                         d.get("win_mgmt_bytes", ""), d.get("win_data_bytes", ""),
-                        d.get("gw_mac", ""), d.get("gw_flip", ""),
+                        d.get("gw_mac", ""), d.get("gw_flip", ""), d.get("m3src", ""),
                         packet_label, packet_attack_type, gen_time.isoformat(),
                     ])
                     f.flush()

@@ -6,6 +6,7 @@
  * Deauth and probe primitives bypass the tot threshold (streak 1).
  * Evidence-gate (NIDS_EVIDENCE_GATE_ENABLE): drop density-only tree hits
  * that have no deauth/probe in the same 100 ms window. model.h unchanged.
+ * An optional, default-off AUTH N-of-M sidecar can be evaluated separately.
  */
 #ifndef NIDS_CALIB_H
 #define NIDS_CALIB_H

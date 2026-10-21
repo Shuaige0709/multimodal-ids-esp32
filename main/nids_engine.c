@@ -17,6 +17,7 @@
 #include "net_config.h"
 #include "nids_calib.h"
 #include "nids_gw.h"
+#include "nids_m3.h"
 #include "nids_types.h"
 #include "sniffer.h"
 #include "syslog_client.h"
@@ -37,8 +38,12 @@ static uint8_t s_win_rogue;
 
 static volatile bool attack_detected = false;
 static volatile int last_raw_pred = 0;
+static volatile uint8_t last_m3_sources = 0;
 static volatile uint32_t last_inference_us = 0;
 static uint32_t queue_peak_depth = 0;
+#if NIDS_M3_ENABLE
+static nids_m3_state_t m3_state;
+#endif
 
 static int mac_is_zero(const uint8_t *mac)
 {
@@ -123,7 +128,9 @@ static void nids_analysis_task(void *arg)
     int64_t w_rssi_sq_sum = 0;
     uint32_t w_rssi_cnt = 0;
 
-#if NIDS_CALIB_ENABLE
+#if NIDS_M3_ENABLE
+    nids_m3_reset(&m3_state);
+#elif NIDS_CALIB_ENABLE
     nids_calib_reset();
 #endif
 
@@ -246,18 +253,44 @@ static void nids_analysis_task(void *arg)
             features.backlog = (double)syslog_client_backlog();
 
             int64_t t0 = esp_timer_get_time();
+#if NIDS_M3_ENABLE
+            nids_gw_poll();
+            nids_m3_input_t m3_input = {0};
+            m3_input.uptime_ms = (uint64_t)(win_now_us / 1000);
+            m3_input.features.total_packets = (float)closed_win_pkts;
+            m3_input.features.packet_density = (float)closed_win_density;
+            m3_input.features.beacon_packets = (float)closed_win_beacon;
+            m3_input.features.deauth_targeted = (float)closed_win_deauth_tgt;
+            m3_input.features.auth_packets = (float)closed_win_auth;
+            m3_input.features.unique_bssid = (float)closed_win_bssid;
+            m3_input.features.twin_bssid = (float)closed_win_twin;
+            m3_input.probe_packets = closed_win_probe;
+            m3_input.beacon_packets = closed_win_beacon;
+            m3_input.deauth_targeted = closed_win_deauth_tgt;
+            m3_input.twin_bssid = closed_win_twin;
+            m3_input.gw_flip = nids_gw_flip();
+            m3_input.reconnects = wifi_manager_reconnect_count();
+            m3_input.gw_mac_valid = nids_gw_mac_copy(m3_input.gw_mac);
+            nids_m3_result_t m3_result = nids_m3_step(&m3_state, &m3_input);
+            int pred = m3_result.raw_vote;
+#else
             int pred = nids_predict(&features);
+#endif
             last_raw_pred = pred;
             last_inference_us = (uint32_t)(esp_timer_get_time() - t0);
             bool was_attack_detected = attack_detected;
-#if NIDS_CALIB_ENABLE
+#if NIDS_M3_ENABLE
+            attack_detected = m3_result.sources != 0;
+            last_m3_sources = m3_result.sources;
+#elif NIDS_CALIB_ENABLE
             attack_detected = nids_calib_on_window(&features, pred);
 #else
             attack_detected = (pred != 0);
 #endif
             display_note_window(pred, attack_detected ? 1 : 0, attack_detected,
                                 closed_win_pkts, closed_win_deauth, closed_win_deauth_tgt,
-                                closed_win_auth, closed_win_twin, closed_win_rogue);
+                                closed_win_auth, closed_win_twin, closed_win_rogue,
+                                closed_win_probe, last_m3_sources);
 
             int64_t attack_log_now_us = esp_timer_get_time();
             if (attack_detected &&
@@ -265,18 +298,29 @@ static void nids_analysis_task(void *arg)
                  (attack_log_now_us - last_attack_log_us) >= 500000)) {
                 last_attack_log_us = attack_log_now_us;
                 ESP_LOGW(TAG2,
-                         "[INFERENCE] attack window: pred=%d calib=%s thr=%.1f pkts=%lu deauth=%lu tgt=%lu jump=%lu density=%.0f heap=%.0f (%lu us)",
+                         "[INFERENCE] attack window: pred=%d calib=%s thr=%.1f pkts=%lu deauth=%lu tgt=%lu auth=%lu jump=%lu density=%.0f heap=%.0f (%lu us)"
+#if NIDS_M3_ENABLE
+                         " m3_sources=0x%02x"
+#endif
+                         ,
                          pred,
-#if NIDS_CALIB_ENABLE
+#if NIDS_M3_ENABLE
+                         "M3", 0.0,
+#elif NIDS_CALIB_ENABLE
                          nids_calib_state() == NIDS_CALIB_ARMED ? "ARMED" : "CALIB",
                          nids_calib_thr_tot(),
 #else
                          "OFF", 0.0,
 #endif
                          (unsigned long)w_total, (unsigned long)w_deauth,
-                         (unsigned long)w_deauth_tgt, (unsigned long)w_seq_jump,
+                         (unsigned long)w_deauth_tgt, (unsigned long)w_auth,
+                         (unsigned long)w_seq_jump,
                          features.packet_density, features.heap,
-                         (unsigned long)last_inference_us);
+                         (unsigned long)last_inference_us
+#if NIDS_M3_ENABLE
+                         , (unsigned)m3_result.sources
+#endif
+                         );
 #if HIPS_ENABLE
                 mitigation_on_attack(&info);
 #endif
@@ -293,7 +337,8 @@ static void nids_analysis_task(void *arg)
                           closed_win_bssid, closed_win_twin, closed_win_rogue,
                           closed_win_mgmt, closed_win_data, closed_win_ctrl,
                           closed_win_bytes, closed_win_len_mean, closed_win_len_max,
-                          closed_win_mgmt_bytes, closed_win_data_bytes);
+                          closed_win_mgmt_bytes, closed_win_data_bytes,
+                          last_m3_sources);
             syslog_client_mirror(syslog_buffer);
 #endif
 
@@ -384,7 +429,8 @@ static void nids_analysis_task(void *arg)
                           report_bssid, report_twin, report_rogue,
                           report_mgmt, report_data, report_ctrl,
                           report_bytes, report_len_mean, report_len_max,
-                          report_mgmt_bytes, report_data_bytes);
+                          report_mgmt_bytes, report_data_bytes,
+                          last_m3_sources);
             if (SYSlOG_MODE == 1) {
                 if (wifi_manager_is_connected() && sock >= 0 && udp_ready) {
                     if (!syslog_client_send(sock, &dest_addr, syslog_buffer)) {

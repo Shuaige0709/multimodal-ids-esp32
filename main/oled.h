@@ -15,6 +15,9 @@ typedef enum {
     OLED_ATTACK_DEAUTH,
     OLED_ATTACK_AUTH,
     OLED_ATTACK_TWIN,
+    OLED_ATTACK_PROBE,
+    OLED_ATTACK_BEACON,
+    OLED_ATTACK_ARP,
 } oled_attack_kind_t;
 
 typedef struct {

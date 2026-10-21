@@ -1,6 +1,7 @@
 #include "nids_calib.h"
 #include "net_config.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,6 +51,7 @@ static int s_neg_run = 0;
 static int s_latched = 0;
 static int s_logged_arm = 0;
 static unsigned s_density_veto = 0;
+static uint32_t s_auth_history = 0;
 
 static int cmp_float(const void *a, const void *b)
 {
@@ -127,6 +129,7 @@ void nids_calib_reset(void)
     s_neg_run = 0;
     s_latched = 0;
     s_logged_arm = 0;
+    s_auth_history = 0;
     s_calib_start_us = esp_timer_get_time();
     s_state = NIDS_CALIB_CALIBRATING;
     ESP_LOGI(TAG, "CALIBRATING for %d ms (benign background; no scripted attacks)",
@@ -156,6 +159,32 @@ static int apply_streak(int candidate, int primitive_path)
     return s_latched;
 }
 
+static int auth_sidecar_candidate(const nids_window_features_t *f)
+{
+#if !NIDS_AUTH_SIDECAR_ENABLE
+    (void)f;
+    return 0;
+#else
+#if NIDS_AUTH_SIDECAR_WINDOW < 1 || NIDS_AUTH_SIDECAR_WINDOW > 31
+#error "NIDS_AUTH_SIDECAR_WINDOW must be between 1 and 31"
+#endif
+#if NIDS_AUTH_SIDECAR_HITS < 1 || NIDS_AUTH_SIDECAR_HITS > NIDS_AUTH_SIDECAR_WINDOW
+#error "NIDS_AUTH_SIDECAR_HITS must be between 1 and NIDS_AUTH_SIDECAR_WINDOW"
+#endif
+    const uint32_t mask = (1u << NIDS_AUTH_SIDECAR_WINDOW) - 1u;
+    const uint32_t hit = f->auth_packets >= (double)NIDS_AUTH_SIDECAR_MIN_PACKETS;
+    s_auth_history = ((s_auth_history << 1) | hit) & mask;
+
+    uint32_t bits = s_auth_history;
+    unsigned count = 0;
+    while (bits != 0u) {
+        count += bits & 1u;
+        bits >>= 1;
+    }
+    return count >= NIDS_AUTH_SIDECAR_HITS;
+#endif
+}
+
 int nids_calib_on_window(const nids_window_features_t *f, int raw_pred)
 {
     if (!f) {
@@ -171,9 +200,9 @@ int nids_calib_on_window(const nids_window_features_t *f, int raw_pred)
 
     const int deauth_path = (f->deauth_packets > 0.5) || (f->deauth_targeted > 0.5);
     const int probe_path = (f->probe_packets > 0.5);
-    const int primitive_path = deauth_path || probe_path;
 
     if (s_state == NIDS_CALIB_CALIBRATING) {
+        s_auth_history = 0;
         if (!deauth_path) {
             ring_push((float)f->total_packets);
         }
@@ -189,8 +218,13 @@ int nids_calib_on_window(const nids_window_features_t *f, int raw_pred)
     }
 
     /* ARMED */
+    const int auth_path = auth_sidecar_candidate(f);
+    const int primitive_path = deauth_path || probe_path || auth_path;
     int candidate = 0;
-    if (deauth_path) {
+    if (auth_path) {
+        /* Sustained semantic evidence; independent of the legacy tree leaf. */
+        candidate = 1;
+    } else if (deauth_path) {
         candidate = (raw_pred != 0);
     } else if (probe_path) {
         /* Probe is a WIDS primitive (08.09 tree often uses tot/dens leaf). */

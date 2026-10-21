@@ -6,6 +6,7 @@
 #include "esp_timer.h"
 #include "net_config.h"
 #include "nids_calib.h"
+#include "nids_m3.h"
 #include "oled.h"
 
 static const char *TAG = "NIDS_INIT";
@@ -54,7 +55,8 @@ void display_note_rssi(int8_t rssi)
 
 void display_note_window(int raw_pred, int gated_pred, bool attack,
                          uint32_t packets, uint32_t deauth, uint32_t targeted,
-                         uint32_t auth, uint32_t twin, uint32_t rogue)
+                         uint32_t auth, uint32_t twin, uint32_t rogue,
+                         uint32_t probe, uint8_t m3_sources)
 {
 #if NIDS_OLED_ENABLE
     oled_live.raw_pred = raw_pred;
@@ -65,6 +67,21 @@ void display_note_window(int raw_pred, int gated_pred, bool attack,
     oled_live.win_auth = auth;
     oled_live.win_twin = twin;
     if (attack) {
+#if NIDS_M3_ENABLE
+        if (m3_sources & NIDS_M3_ARP) {
+            oled_live.attack_kind = OLED_ATTACK_ARP;
+        } else if (m3_sources & NIDS_M3_BEACON) {
+            oled_live.attack_kind = OLED_ATTACK_BEACON;
+        } else if (deauth > 0 || targeted > 0) {
+            oled_live.attack_kind = OLED_ATTACK_DEAUTH;
+        } else if (twin > 0 || rogue > 0) {
+            oled_live.attack_kind = OLED_ATTACK_TWIN;
+        } else if (probe > 0) {
+            oled_live.attack_kind = OLED_ATTACK_PROBE;
+        } else {
+            oled_live.attack_kind = OLED_ATTACK_ANOMALY;
+        }
+#else
         if (deauth > 0 || targeted > 0) {
             oled_live.attack_kind = OLED_ATTACK_DEAUTH;
         } else if (twin > 0 || rogue > 0) {
@@ -74,6 +91,7 @@ void display_note_window(int raw_pred, int gated_pred, bool attack,
         } else {
             oled_live.attack_kind = OLED_ATTACK_ANOMALY;
         }
+#endif
         oled_alert_snapshot = oled_live;
         int64_t now_us = esp_timer_get_time();
         oled_alert_until_us = now_us + OLED_ALERT_HOLD_US;
@@ -89,6 +107,8 @@ void display_note_window(int raw_pred, int gated_pred, bool attack,
     (void)auth;
     (void)twin;
     (void)rogue;
+    (void)probe;
+    (void)m3_sources;
 #endif
 }
 
@@ -127,7 +147,9 @@ void display_tick(bool wifi_up, bool collector_ready, uint8_t channel,
     }
     view.wifi_connected = wifi_up;
     view.collector_ready = collector_ready;
-#if NIDS_CALIB_ENABLE
+#if NIDS_M3_ENABLE
+    view.calib_armed = true;
+#elif NIDS_CALIB_ENABLE
     view.calib_armed = nids_calib_state() == NIDS_CALIB_ARMED;
 #else
     view.calib_armed = true;

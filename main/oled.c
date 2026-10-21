@@ -189,6 +189,9 @@ static const char *attack_name(oled_attack_kind_t kind)
     case OLED_ATTACK_DEAUTH: return "DEAUTH";
     case OLED_ATTACK_AUTH:   return "AUTH";
     case OLED_ATTACK_TWIN:   return "EVIL TWIN";
+    case OLED_ATTACK_PROBE:  return "PROBE";
+    case OLED_ATTACK_BEACON: return "BEACON";
+    case OLED_ATTACK_ARP:    return "ARP";
     default:                 return "ANOMALY";
     }
 }

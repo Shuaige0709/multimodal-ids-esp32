@@ -35,4 +35,5 @@ void syslog_encode(char *buf, size_t size, const nids_pkt_info_t *info, uint32_t
                    uint32_t win_bssid, uint32_t win_twin, uint32_t win_rogue,
                    uint32_t win_mgmt, uint32_t win_data, uint32_t win_ctrl,
                    uint32_t win_bytes, uint32_t win_len_mean, uint32_t win_len_max,
-                   uint32_t win_mgmt_bytes, uint32_t win_data_bytes);
+                   uint32_t win_mgmt_bytes, uint32_t win_data_bytes,
+                   uint8_t m3_sources);

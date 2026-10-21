@@ -328,7 +328,8 @@ void syslog_encode(char *buf, size_t size, const nids_pkt_info_t *info, uint32_t
                    uint32_t win_bssid, uint32_t win_twin, uint32_t win_rogue,
                    uint32_t win_mgmt, uint32_t win_data, uint32_t win_ctrl,
                    uint32_t win_bytes, uint32_t win_len_mean, uint32_t win_len_max,
-                   uint32_t win_mgmt_bytes, uint32_t win_data_bytes)
+                   uint32_t win_mgmt_bytes, uint32_t win_data_bytes,
+                   uint8_t m3_sources)
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -343,7 +344,7 @@ void syslog_encode(char *buf, size_t size, const nids_pkt_info_t *info, uint32_t
         "udpfail=\"%lu\" backlog=\"%lu\" dropped=\"%lu\" host_mac=\"%s\" attack=\"%d\" "
         "deauth_tgt=\"%u\" seq_jump=\"%u\" ap_bssid=\"%s\" channel=\"%u\" "
         "win_pkts=\"%lu\" win_dens=\"%.1f\" pred=\"%d\" calib=\"%s\" thr=\"%.1f\" "
-        "gw_mac=\"%s\" gw_flip=\"%lu\" "
+        "gw_mac=\"%s\" gw_flip=\"%lu\" m3src=\"%u\" "
         "win_deauth=\"%lu\" win_probe=\"%lu\" win_beacon=\"%lu\" win_auth=\"%lu\" "
         "win_bssid=\"%lu\" win_twin=\"%lu\" win_rogue=\"%lu\" "
         "win_mgmt=\"%lu\" win_data=\"%lu\" win_ctrl=\"%lu\" win_bytes=\"%lu\" "
@@ -359,8 +360,13 @@ void syslog_encode(char *buf, size_t size, const nids_pkt_info_t *info, uint32_t
         (unsigned)win_deauth_tgt, (unsigned)win_seq_jump,
         wifi_manager_ap_bssid_str(), (unsigned)wifi_manager_ap_channel(),
         (unsigned long)win_pkts, win_density,
-        raw_pred, nids_calib_state_str(), nids_calib_thr_tot(),
-        nids_gw_mac_str(), (unsigned long)nids_gw_flip(),
+        raw_pred,
+#if NIDS_M3_ENABLE
+        "M3", 0.0,
+#else
+        nids_calib_state_str(), nids_calib_thr_tot(),
+#endif
+        nids_gw_mac_str(), (unsigned long)nids_gw_flip(), (unsigned)m3_sources,
         (unsigned long)win_deauth, (unsigned long)win_probe,
         (unsigned long)win_beacon, (unsigned long)win_auth,
         (unsigned long)win_bssid, (unsigned long)win_twin, (unsigned long)win_rogue,
