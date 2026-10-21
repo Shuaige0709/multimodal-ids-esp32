@@ -58,6 +58,7 @@ docs/*.txt
 note/.github_token
 # Personal packing lists / home checklist — not for teammates
 note/private/
+note/collector.md
 
 # --- ESP-IDF build (everyone generates locally) ---
 **/build/

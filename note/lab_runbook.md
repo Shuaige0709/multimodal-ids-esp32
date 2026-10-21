@@ -196,7 +196,7 @@ sudo -E ./host/attacks/attack_deauth.sh
 
 ## 5. 模式 S — targeted deauth 的 UART ground truth
 
-> 租屋處要收哪些、兩支 collector 的開啟順序：照 [`collector.md`](collector.md)。Deauth / disassoc 才開 Windows 的 serial collector，而且要在那 3 分鐘正常開始之前就開著。
+Deauth / disassoc 才開 Windows 的 serial collector，而且要在那 3 分鐘正常開始之前就開著。租屋處每一場要收什麼留在本機筆記，不進版本庫。
 
 USB 紀錄會混進 ESP-IDF 的主控台訊息。CSV 只留每個視窗那一列，全部主控台輸出另存在 `<out>.log`。一般實驗用燒錄那條 USB 線即可。
 
