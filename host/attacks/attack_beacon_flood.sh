@@ -74,5 +74,9 @@ echo ">>> mdk4 finished rc=${rc} (124=timeout/duration OK)"
 sleep 1
 send_label STOP BEACON_FLOOD
 LABEL_SENT=0
+if [[ "$rc" -ne 124 && "$rc" -ne 0 ]]; then
+  echo ">>> ERROR: mdk4 exited unexpectedly (rc=${rc}); do not use this run as a valid attack" >&2
+  exit "$rc"
+fi
 echo " >>> BEACON_FLOOD FINISHED"
 echo " >>> Next: sudo -E ./host/attacks/prepare_wifi.sh managed"
