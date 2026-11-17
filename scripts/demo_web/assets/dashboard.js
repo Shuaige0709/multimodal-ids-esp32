@@ -1,5 +1,11 @@
 const $ = id => document.getElementById(id);
 let lastData = null, busy = false;
+// Presentation filter only. CSV, API and downloaded records retain all events.
+const MIN_COMPLETED_WIRELESS_SECONDS = 1;
+function visibleAlerts(events) {
+  return events.filter(e => e.active || e.type === 'ARP 身分異常' ||
+    e.duration >= MIN_COMPLETED_WIRELESS_SECONDS);
+}
 function text(id, value) { const node = $(id); if (node.textContent !== String(value)) node.textContent = value; }
 function duration(seconds) {
   if (seconds === null || seconds === undefined) return '—';
@@ -18,7 +24,10 @@ function entries(id, items, kind) {
     if (kind === 'alert') {
       row.append(node('h4', 'title-3', e.type), badge(e.active ? '持續告警' : '已記錄', e.active ? 'bad' : ''));
       const meta = node('div', 'meta caption-2');
-      meta.append(node('span', '', clock(e.start) + ' → ' + clock(e.last)), node('span', '', e.duration.toFixed(1) + ' 秒'));
+      const singleEvent = e.type === 'ARP 身分異常';
+      const interval = singleEvent && e.duration === 0 ? clock(e.start) : clock(e.start) + ' → ' + clock(e.last);
+      const length = singleEvent ? '事件告警' : e.duration < 0.1 ? '剛偵測到' : e.duration.toFixed(1) + ' 秒';
+      meta.append(node('span', '', interval), node('span', '', length));
       row.append(meta);
     } else {
       const done = e.outcome === 'recovered', interrupted = e.outcome === 'interrupted';
@@ -92,9 +101,10 @@ function render(d) {
   text('attack', d.types.length ? d.types.join(' · ') : d.state === 'monitoring' ? '無新告警' : '等待更新');
   text('uart', !d.serial ? '已中斷' : fresh ? '持續接收' : d.age === null ? '等待資料' : '暫停更新');
   text('uartHint', d.age === null ? 'USB 連接電腦' : d.age < 1 ? '剛剛收到資料' : Math.floor(d.age) + ' 秒前收到資料');
-  text('count', d.total); text('alertCount', d.total + ' 段');
-  text('lastAlert', d.events.length ? '最近 ' + clock(d.events[0].last) : '尚無告警');
-  entries('events', d.events, 'alert');
+  const shownAlerts = visibleAlerts(d.events);
+  text('count', shownAlerts.length); text('alertCount', shownAlerts.length + ' 段');
+  text('lastAlert', shownAlerts.length ? '最近 ' + clock(shownAlerts[0].last) : '尚無符合條件的告警');
+  entries('events', shownAlerts, 'alert');
   text('session', '本次啟動於 ' + clock(d.started)); text('updated', '更新於 ' + new Date().toLocaleTimeString('zh-TW', {hour12:false}));
   $('error').hidden = !d.error; text('error', d.error ? 'UART 讀取失敗：' + d.error : ''); $('download').disabled = false;
 }
