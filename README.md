@@ -5,6 +5,7 @@ Edge multimodal NIDS on ESP32. `main.c` only starts the firmware. The default on
 
 **手機／電腦即時展示：** 執行 `./scripts/start_demo_dashboard.ps1`，同一個 UART collector 會保存 CSV 並提供區域網路網頁。操作說明見 [`docs/demo_dashboard.md`](docs/demo_dashboard.md)。
 
+**ARP 自動修復與鎖定：** 可信任閘道器修復、靜態 ARP 鎖定及 ICMP 驗證；可複製的 OFF／ON 對照指令見 [`docs/arp_guard_test_runbook.md`](docs/arp_guard_test_runbook.md)。
 
 **Winston 任務：** [`docs/HELP.md`](docs/HELP.md)  
 **實驗日步驟：** [`note/lab_runbook.md`](note/lab_runbook.md)  

@@ -46,7 +46,7 @@ New-NetFirewallRule -DisplayName 'ESP32 IDS Demo 8080' -Direction Inbound -Actio
 
 依 `landing-page-design` skill 的字級、間距、字型與狀態規範重整，受眾為競賽評審與設備使用者。採簡潔的設備監控介面：大字狀態、單一恢復區、細分隔線事件紀錄。首頁移除開發與評估說明，這些內容集中在本文件。由於是操作介面，不加入行銷用 FAQ、口號、推薦見證或註冊區塊。
 
-參考 [Uptime Kuma](https://github.com/louislam/uptime-kuma) 的狀態及事件歷程呈現；本機附帶 [Geist](https://vercel.com/font) 字型與授權，中文使用系統可用中文字型。無需外部 CDN。
+參考 [Uptime Kuma](https://github.com/louislam/uptime-kuma) 的狀態及事件歷程呈現；本機附帶 [Geist](https://vercel.com/font) 字型與授權，中文使用系統可用中文字型。無需外部 CDN。ARP 自動防護與通訊驗證另見 [ARP 開關對照手冊](arp_guard_test_runbook.md)，需要可信任網路設定及新版韌體。
 
 ## 評審會看到什麼
 

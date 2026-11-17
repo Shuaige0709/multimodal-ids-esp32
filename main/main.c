@@ -1,4 +1,5 @@
 #include "http_status.h"
+#include "arp_guard.h"
 #include "nids_engine.h"
 #include "sniffer.h"
 #include "syslog_client.h"
@@ -16,6 +17,7 @@ void app_main(void)
     wifi_manager_prepare();
     nids_engine_start();
     wifi_manager_start();
+    arp_guard_start();
     syslog_client_start_discovery();
     http_status_start();
     system_monitor_start();

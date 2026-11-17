@@ -117,3 +117,6 @@ docs/figures/eval_metrics_nids_counts_20260818.json
 host/train/leftover_*.py
 host/train/window_ms_contrast.py
 host/train/teammate_fixed_ap_visibility.py
+
+# Local trusted network profile for ARP defense
+main/arp_guard_profile.h
