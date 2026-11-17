@@ -20,8 +20,8 @@ static uint8_t fb[OLED_WIDTH * OLED_HEIGHT / 8];
 static bool oled_ready = false;
 static bool transfer_error_logged = false;
 
-/* Complete uppercase glyph set. Detail text is stretched to 5x8 so it is not
- * shorter than the previous 8x8 font; headings use scale 2 for demo distance. */
+/* Uppercase bitmap glyphs. Demo screens use scale 2 (10x14 pixels) or
+ * scale 3 (15x21 pixels); no small diagnostic text is shown. */
 static const uint8_t font_5x7[59][7] = {
     ['!' - ' '] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04},
     ['%' - ' '] = {0x19, 0x1A, 0x04, 0x08, 0x0B, 0x13, 0x00},
@@ -166,6 +166,16 @@ static void draw_text_centered(int y, const char *text, int scale, bool on)
     draw_text(x < 0 ? 0 : x, y, text, scale, on);
 }
 
+/* Eight large SCANNING glyphs fit in 127 pixels with one-pixel spacing.
+ * Preserve the 15x21 glyph size rather than shrinking the main message. */
+static void draw_scanning(void)
+{
+    const char *text = "SCANNING";
+    for (int i = 0; text[i] != '\0'; i++) {
+        draw_char(i * 16, 22, text[i], 3, true);
+    }
+}
+
 static bool oled_flush(void)
 {
     for (int page = 0; page < 8; page++) {
@@ -204,6 +214,59 @@ static void draw_heading(const char *heading, bool inverted)
     } else {
         draw_text_centered(1, heading, 2, true);
         fill_rect(0, 15, OLED_WIDTH, 1, true);
+    }
+}
+
+/* Original 12x12 swallow silhouette: pointed wings and a forked tail.
+ * Three poses follow an up / level / down / level wingbeat. */
+static const uint16_t swallow_rows[3][12] = {
+    {0x000, 0x020, 0x030, 0x838, 0x43A, 0x27F, 0x1FE, 0x2F8, 0x400, 0x800, 0x000, 0x000},
+    {0x000, 0x000, 0x000, 0x800, 0x5F2, 0x27F, 0x1FE, 0x2F8, 0x4F8, 0x800, 0x000, 0x000},
+    {0x000, 0x000, 0x000, 0x800, 0x402, 0x27F, 0x1FE, 0x2F8, 0x438, 0x830, 0x030, 0x020},
+};
+
+static void draw_swallow(uint32_t frame, bool inverted)
+{
+    static const uint8_t wingbeat[] = {0, 1, 2, 1};
+    const uint16_t *rows = swallow_rows[wingbeat[frame % 4]];
+    for (int y = 0; y < 12; y++) {
+        for (int x = 0; x < 12; x++) {
+            if (rows[y] & (1u << (11 - x))) {
+                set_pixel(2 + x, 1 + y, !inverted);
+            }
+        }
+    }
+}
+
+static void draw_activity(const oled_status_t *status, bool inverted, bool mascot)
+{
+    if (mascot) {
+        draw_swallow(status->animation_frame, inverted);
+    }
+    /* UI heartbeat only, independent of packet volume and attack severity. */
+    bool ink = !inverted;
+    fill_rect(120, 5, 6, 6, ink);
+    if (status->animation_frame % 2 == 0) {
+        fill_rect(121, 6, 4, 4, !ink);
+    }
+}
+
+static void draw_live_footer(const oled_status_t *status)
+{
+    if (status->wifi_connected && status->animation_frame % 6 >= 3) {
+        char label[16];
+        if (status->packets_per_second >= 1000000) {
+            snprintf(label, sizeof(label), "1M+ PKT/S");
+        } else if (status->packets_per_second >= 10000) {
+            snprintf(label, sizeof(label), "%luK PKT/S",
+                     (unsigned long)(status->packets_per_second / 1000));
+        } else {
+            snprintf(label, sizeof(label), "%lu PKT/S",
+                     (unsigned long)status->packets_per_second);
+        }
+        draw_text_centered(50, label, 2, true);
+    } else {
+        draw_text_centered(50, status->wifi_connected ? "WIFI UP" : "WIFI DOWN", 2, true);
     }
 }
 
@@ -251,75 +314,44 @@ void oled_show_status(const oled_status_t *status)
         return;
     }
 
-    char line[24];
     memset(fb, 0, sizeof(fb));
 
+    /* Three clearly separated rows: state, main message, live link status.
+     * Long attack names use scale 2; shorter names use scale 3. */
     switch (status->state) {
-    case OLED_STATE_ALERT:
-        draw_heading("ALERT", true);
-        snprintf(line, sizeof(line), "TYPE %s", attack_name(status->attack_kind));
-        draw_text(0, 18, line, 1, true);
-        snprintf(line, sizeof(line), "RAW %d GATE %d", status->raw_pred, status->gated_pred);
-        draw_text(0, 28, line, 1, true);
-        snprintf(line, sizeof(line), "PKT %lu D %lu",
-                 (unsigned long)status->win_packets,
-                 (unsigned long)status->win_deauth);
-        draw_text(0, 38, line, 1, true);
-        snprintf(line, sizeof(line), "TGT %lu AUTH %lu",
-                 (unsigned long)status->win_targeted,
-                 (unsigned long)status->win_auth);
-        draw_text(0, 48, line, 1, true);
-        snprintf(line, sizeof(line), "WIFI %s HOLD %luS",
-                 status->wifi_connected ? "UP" : "DOWN",
-                 (unsigned long)status->hold_seconds);
-        draw_text(0, 56, line, 1, true);
+    case OLED_STATE_ALERT: {
+        const char *name = attack_name(status->attack_kind);
+        draw_heading(status->alarm_active ? "ATTACK" : "RECENT", true);
+        draw_text_centered(22, name, text_width(name, 3) <= OLED_WIDTH ? 3 : 2, true);
+        draw_activity(status, true, true);
+        draw_text_centered(50, status->wifi_connected ? "WIFI UP" : "WIFI DOWN", 2, true);
         break;
+    }
 
     case OLED_STATE_RECOVER:
         draw_heading("RECOVER", false);
-        snprintf(line, sizeof(line), "LAST %s", attack_name(status->attack_kind));
-        draw_text(0, 18, line, 1, true);
-        snprintf(line, sizeof(line), "WIFI %s CH %u",
-                 status->wifi_connected ? "UP" : "DOWN", status->channel);
-        draw_text(0, 28, line, 1, true);
-        snprintf(line, sizeof(line), "RECON %lu BACK %lu",
-                 (unsigned long)status->reconnects,
-                 (unsigned long)status->backlog);
-        draw_text(0, 38, line, 1, true);
-        draw_text(0, 48, "NIDS MONITORING", 1, true);
-        draw_text(0, 56, status->uart_drops == 0 ? "UART OK" : "UART DROPS", 1, true);
+        draw_activity(status, false, true);
+        draw_scanning();
+        draw_text_centered(50, "WIFI UP", 2, true);
         break;
 
     case OLED_STATE_LINK_DOWN:
         draw_heading("LINK LOST", true);
-        draw_text(0, 18, "NIDS RUNNING", 1, true);
-        snprintf(line, sizeof(line), "UDP OFF BACK %lu", (unsigned long)status->backlog);
-        draw_text(0, 28, line, 1, true);
-        draw_text(0, 38, status->uart_drops == 0 ? "UART OK" : "UART DROPS", 1, true);
-        snprintf(line, sizeof(line), "RECON %lu", (unsigned long)status->reconnects);
-        draw_text(0, 48, line, 1, true);
-        snprintf(line, sizeof(line), "CH %u RSSI %d", status->channel, status->rssi);
-        draw_text(0, 56, line, 1, true);
+        draw_activity(status, true, false);
+        draw_text_centered(22, "RETRY", 3, true);
+        draw_text_centered(50, "WIFI DOWN", 2, true);
         break;
 
     case OLED_STATE_READY:
     default:
-        draw_heading("READY", false);
-        snprintf(line, sizeof(line), "WIFI %s CH %u",
-                 status->wifi_connected ? "UP" : "DOWN", status->channel);
-        draw_text(0, 18, line, 1, true);
-        snprintf(line, sizeof(line), "NIDS %s UDP %s",
-                 status->calib_armed ? "ARMED" : "CALIB",
-                 status->collector_ready ? "OK" : "WAIT");
-        draw_text(0, 28, line, 1, true);
-        snprintf(line, sizeof(line), "PKT %lu RSSI %d",
-                 (unsigned long)status->win_packets, status->rssi);
-        draw_text(0, 38, line, 1, true);
-        snprintf(line, sizeof(line), "RECON %lu BACK %lu",
-                 (unsigned long)status->reconnects,
-                 (unsigned long)status->backlog);
-        draw_text(0, 48, line, 1, true);
-        draw_text(0, 56, status->uart_drops == 0 ? "UART OK" : "UART DROPS", 1, true);
+        draw_heading(status->calib_armed ? "NORMAL" : "STARTING", false);
+        draw_activity(status, false, status->calib_armed);
+        if (status->calib_armed) {
+            draw_scanning();
+        } else {
+            draw_text_centered(22, "WAIT", 3, true);
+        }
+        draw_live_footer(status);
         break;
     }
 

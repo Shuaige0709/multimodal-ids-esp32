@@ -19,8 +19,12 @@ static const int64_t OLED_UPDATE_MIN_INTERVAL_MS = 1000;
 static const int64_t OLED_ALERT_HOLD_US = 8000000;
 static const int64_t OLED_RECOVER_HOLD_US = 3000000;
 static int64_t oled_alert_until_us = 0;
+static int64_t last_oled_attack_us = 0;
+static bool oled_link_known = false;
+static bool oled_last_wifi_up = false;
 static int64_t oled_recover_until_us = 0;
 static int8_t last_rssi = 0;
+static uint32_t oled_rx_packets = 0;
 static oled_status_t oled_live = {0};
 static oled_status_t oled_alert_snapshot = {0};
 #endif
@@ -48,6 +52,7 @@ void display_note_rssi(int8_t rssi)
 {
 #if NIDS_OLED_ENABLE
     last_rssi = rssi;
+    oled_rx_packets++; /* One call per packet processed by the analysis task. */
 #else
     (void)rssi;
 #endif
@@ -59,6 +64,7 @@ void display_note_window(int raw_pred, int gated_pred, bool attack,
                          uint32_t probe, uint8_t m3_sources)
 {
 #if NIDS_OLED_ENABLE
+    oled_live.alarm_active = attack;
     oled_live.raw_pred = raw_pred;
     oled_live.gated_pred = gated_pred;
     oled_live.win_packets = packets;
@@ -94,6 +100,7 @@ void display_note_window(int raw_pred, int gated_pred, bool attack,
 #endif
         oled_alert_snapshot = oled_live;
         int64_t now_us = esp_timer_get_time();
+        last_oled_attack_us = now_us;
         oled_alert_until_us = now_us + OLED_ALERT_HOLD_US;
         oled_recover_until_us = oled_alert_until_us + OLED_RECOVER_HOLD_US;
     }
@@ -132,10 +139,22 @@ void display_tick(bool wifi_up, bool collector_ready, uint8_t channel,
         return;
     }
     int64_t now_us = now_ms * 1000;
+    /* A real link-up transition also gets a recovery screen, even if the
+     * preceding outage lasted longer than the attack-display hold. */
+    if (oled_link_known && !oled_last_wifi_up && wifi_up) {
+        int64_t recovery_start_us = now_us > oled_alert_until_us ? now_us : oled_alert_until_us;
+        oled_recover_until_us = recovery_start_us + OLED_RECOVER_HOLD_US;
+    }
+    oled_link_known = true;
+    oled_last_wifi_up = wifi_up;
     oled_status_t view = oled_live;
     if (now_us < oled_alert_until_us) {
         view = oled_alert_snapshot;
         view.state = OLED_STATE_ALERT;
+        /* Do not present an eight-second UI hold as a continuing detection.
+         * Expire freshness when windows stop arriving during a disconnection. */
+        view.alarm_active = oled_live.alarm_active &&
+                            now_us - last_oled_attack_us <= 1500000;
         view.hold_seconds = (uint32_t)((oled_alert_until_us - now_us + 999999) / 1000000);
     } else if (!wifi_up) {
         view.state = OLED_STATE_LINK_DOWN;
@@ -145,6 +164,11 @@ void display_tick(bool wifi_up, bool collector_ready, uint8_t channel,
     } else {
         view.state = OLED_STATE_READY;
     }
+    view.animation_frame = (uint32_t)(now_ms / OLED_UPDATE_MIN_INTERVAL_MS);
+    int64_t elapsed_ms = last_oled_update_ms ? now_ms - last_oled_update_ms : now_ms;
+    view.packets_per_second = elapsed_ms > 0 ?
+        (uint32_t)((uint64_t)oled_rx_packets * 1000 / (uint64_t)elapsed_ms) : 0;
+    oled_rx_packets = 0;
     view.wifi_connected = wifi_up;
     view.collector_ready = collector_ready;
 #if NIDS_M3_ENABLE

@@ -23,6 +23,9 @@ typedef enum {
 typedef struct {
     oled_state_t state;
     oled_attack_kind_t attack_kind;
+    uint32_t animation_frame;
+    uint32_t packets_per_second;
+    bool alarm_active; /* Fresh positive window; held alerts are labeled RECENT. */
     bool wifi_connected;
     bool collector_ready;
     bool calib_armed;

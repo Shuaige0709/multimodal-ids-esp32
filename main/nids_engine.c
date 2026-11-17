@@ -150,7 +150,11 @@ static void nids_analysis_task(void *arg)
     }
 
     while (1) {
-        if (xQueueReceive(sniffer_queue(), &info, portMAX_DELAY) != pdTRUE) {
+        if (xQueueReceive(sniffer_queue(), &info, pdMS_TO_TICKS(100)) != pdTRUE) {
+            /* Refresh the UI without synthesizing RF windows or model votes. */
+            display_tick(wifi_manager_is_connected(), syslog_client_collector_known(),
+                         wifi_manager_ap_channel(), wifi_manager_reconnect_count(),
+                         syslog_client_backlog(), syslog_client_uart_drops());
             continue;
         }
         pkt_count++;
