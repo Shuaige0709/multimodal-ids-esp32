@@ -114,6 +114,7 @@ static void nids_analysis_task(void *arg)
     int64_t last_attack_log_us = 0;
     int64_t last_transport_log_us = 0;
     int64_t last_status_log_us = 0;
+    int64_t last_link_log_us = 0;
 
     const int64_t WINDOW_US = 100000;
     int64_t window_start_us = esp_timer_get_time();
@@ -150,6 +151,15 @@ static void nids_analysis_task(void *arg)
     }
 
     while (1) {
+        int64_t link_now_us = esp_timer_get_time();
+        if (last_link_log_us == 0 || link_now_us - last_link_log_us >= 1000000) {
+            last_link_log_us = link_now_us;
+            /* Explicit link snapshot for collectors attached after boot.
+             * Emit even during RF silence; this is not a detector vote. */
+            ESP_LOGI(TAG2, "[NIDS_LINK] connected=%d channel=%u",
+                     wifi_manager_is_connected() ? 1 : 0,
+                     (unsigned)wifi_manager_ap_channel());
+        }
         if (xQueueReceive(sniffer_queue(), &info, pdMS_TO_TICKS(100)) != pdTRUE) {
             /* Refresh the UI without synthesizing RF windows or model votes. */
             display_tick(wifi_manager_is_connected(), syslog_client_collector_known(),

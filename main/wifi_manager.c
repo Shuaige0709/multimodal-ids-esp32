@@ -34,13 +34,20 @@ static char ap_ssid[33] = {0};
 static uint8_t ap_ssid_len = 0;
 static uint8_t ap_channel = 0;
 
+static esp_err_t request_wifi_connection(void)
+{
+    esp_err_t err = esp_wifi_connect();
+    ESP_LOGI(TAG, "[NIDS_RECONNECT] attempt result=%s", esp_err_to_name(err));
+    return err;
+}
+
 static void schedule_wifi_reconnect(void)
 {
     const uint32_t delay_ms = wifi_reconnect_delay_ms;
 
     if (wifi_reconnect_timer == NULL) {
         ESP_LOGW(TAG, "Reconnect timer unavailable; reconnecting immediately");
-        esp_wifi_connect();
+        request_wifi_connection();
         return;
     }
 
@@ -51,7 +58,7 @@ static void schedule_wifi_reconnect(void)
     esp_err_t err = esp_timer_start_once(wifi_reconnect_timer, (uint64_t)delay_ms * 1000U);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Could not schedule WiFi reconnect: %s", esp_err_to_name(err));
-        esp_wifi_connect();
+        request_wifi_connection();
         return;
     }
 
@@ -69,7 +76,7 @@ static void wifi_reconnect_timer_cb(void *arg)
     if (wifi_connected) {
         return;
     }
-    esp_err_t err = esp_wifi_connect();
+    esp_err_t err = request_wifi_connection();
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Delayed WiFi reconnect failed: %s", esp_err_to_name(err));
     }
@@ -191,7 +198,7 @@ void wifi_manager_start(void)
     }
 
     ESP_LOGI(TAG, "Connecting to WiFi...");
-    esp_wifi_connect();
+    request_wifi_connection();
     if (wifi_event_group == NULL) {
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_wifi_set_promiscuous(true);

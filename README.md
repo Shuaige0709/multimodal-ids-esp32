@@ -3,6 +3,9 @@
 Edge multimodal NIDS on ESP32. `main.c` only starts the firmware. The default on-device decision is M3 (`main/m3_model.h`); the August 9 `model.h` tree remains the fallback when `NIDS_M3_ENABLE` is 0.  
 **Attacks: shell only. Collector / train: Python.**
 
+**手機／電腦即時展示：** 執行 `./scripts/start_demo_dashboard.ps1`，同一個 UART collector 會保存 CSV 並提供區域網路網頁。操作說明見 [`docs/demo_dashboard.md`](docs/demo_dashboard.md)。
+
+
 **Winston 任務：** [`docs/HELP.md`](docs/HELP.md)  
 **實驗日步驟：** [`note/lab_runbook.md`](note/lab_runbook.md)  
 **進度簡報：** [`docs/0809report.md`](docs/0809report.md)（08.13）· [`docs/0820report.md`](docs/0820report.md)（08.20）

@@ -300,6 +300,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", required=True, help="Serial port, e.g. COM3 or /dev/ttyUSB0")
     p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--web", action="store_true", help="Serve the live phone/LAN dashboard")
+    p.add_argument("--web-bind", default="0.0.0.0", help="Dashboard listen address")
+    p.add_argument("--web-port", type=int, default=8080)
     p.add_argument(
         "--out",
         default=None,
@@ -334,6 +337,19 @@ def main():
 
     ser = open_serial(args.port, args.baud, args.standby)
     label_sock = open_label_socket(args.label_bind, args.label_port)
+    dashboard = web_server = None
+    if args.web:
+        from scripts.demo_dashboard import DashboardState, start_dashboard
+        dashboard = DashboardState()
+        dashboard.transport(True)
+        try:
+            web_server = start_dashboard(dashboard, args.web_bind, args.web_port)
+        except OSError as e:
+            ser.close()
+            label_sock.close()
+            raise SystemExit(f"Dashboard could not start: {e}")
+        print(f"Dashboard on this PC: http://localhost:{args.web_port}")
+        print(f"Phone: http://<PC Wi-Fi IPv4>:{args.web_port} (same LAN)")
     label_state = {"current": None, "intervals": []}
     min_offset = None
     last_uptime_sec = 0.0
@@ -359,6 +375,8 @@ def main():
                 try:
                     line = ser.readline().decode("utf-8", errors="replace").strip()
                 except SerialException as e:
+                    if dashboard:
+                        dashboard.transport(False, e)
                     print(f"Serial error: {e}; reconnecting..." if args.standby else e)
                     if not args.standby:
                         break
@@ -368,6 +386,8 @@ def main():
                         pass
                     time.sleep(1.0)
                     ser = open_serial(args.port, args.baud, True)
+                    if dashboard:
+                        dashboard.transport(True)
                     continue
                 drain_labels(label_sock, label_state)
                 if not line:
@@ -376,6 +396,8 @@ def main():
                 raw_log.write(f"{received_at.isoformat()} {line}\n")
                 raw_log.flush()
                 sd = parse_sd(line)
+                if dashboard:
+                    dashboard.ingest(line, sd)
                 if not sd:
                     continue
 
@@ -404,6 +426,9 @@ def main():
             except Exception:
                 pass
             label_sock.close()
+            if web_server:
+                web_server.shutdown()
+                web_server.server_close()
 
 
 if __name__ == "__main__":
