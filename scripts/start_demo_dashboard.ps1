@@ -1,7 +1,10 @@
 param(
     [string]$Port = 'COM3',
     [int]$WebPort = 8080,
-    [ValidatePattern('^[A-Za-z0-9_\-]*$')][string]$RunName = ''
+    [int]$LabelPort = 10000,
+    [ValidatePattern('^[A-Za-z0-9_\-]*$')][string]$RunName = '',
+    [ValidateSet('zh','en')][string]$Language = 'zh',
+    [switch]$OpenBrowser
 )
 $ErrorActionPreference = 'Stop'
 $projectDir = Split-Path -Parent $PSScriptRoot
@@ -31,6 +34,9 @@ try {
 } catch { Write-Host 'Use ipconfig to find the PC Wi-Fi IPv4 address.' }
 Write-Host 'Keep this window open. Stop other UART collectors/monitors first. Ctrl+C to stop.'
 $collectorArgs = @((Join-Path $PSScriptRoot 'serial_collector.py'), '--port', $Port, '--standby', '--web', '--web-port', $WebPort)
+$collectorArgs += @('--language', $Language)
+$collectorArgs += @('--label-port', $LabelPort)
+if ($OpenBrowser) { $collectorArgs += '--open-browser' }
 if ($RunName) {
     $outPath = Join-Path $projectDir ('data\raw\' + $RunName + '_' + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.csv')
     $collectorArgs += @('--out', $outPath)

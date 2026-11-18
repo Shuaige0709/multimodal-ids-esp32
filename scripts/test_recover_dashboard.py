@@ -68,9 +68,11 @@ class RecoveryTests(unittest.TestCase):
                   patch.object(collector, 'open_label_socket', return_value=Mock()),
                   patch.object(collector, 'drain_labels'),
                   patch('scripts.demo_dashboard.start_dashboard', return_value=server),
-                  patch('sys.argv', ['collector', '--port', 'TEST', '--web', '--out', str(csv)]),
+                  patch('webbrowser.open') as browser,
+                  patch('sys.argv', ['collector', '--port', 'TEST', '--web', '--open-browser', '--language', 'en', '--out', str(csv)]),
                   contextlib.redirect_stdout(io.StringIO())):
                 collector.main()
+            browser.assert_called_once_with('http://localhost:8080/?lang=en')
             data = json.loads(snapshot.read_text(encoding='utf-8'))
             self.assertTrue(data['export']['recording_ended'])
             self.assertEqual(data['protection']['mode'], 'off')

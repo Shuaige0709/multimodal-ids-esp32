@@ -143,7 +143,8 @@ run_aireplay_batch() {
 }
 
 batch=10
-repeats=5
+repeats="${NIDS_DEAUTH_BATCHES:-5}"
+[[ "$repeats" =~ ^[1-5]$ ]] || { echo 'NIDS_DEAUTH_BATCHES must be 1..5'; exit 1; }
 rescanned=0
 for ((i=1; i<=repeats; i++)); do
   echo ">>> Batch ${i}/${repeats}: ${batch} deauth frames"

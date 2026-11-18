@@ -1,0 +1,19 @@
+{
+  "ssid": "302",
+  "ap_bssid": "68:02:B8:BB:AF:57",
+  "channel": 11,
+  "esp32_ip": "192.168.0.10",
+  "esp32_mac": "B0:CB:D8:C9:92:00",
+  "gateway_ip": "192.168.0.1",
+  "gateway_mac": "68:02:B8:BB:EC:D4",
+  "windows_hostonly_ip": "192.168.124.1",
+  "dashboard_port": 8080,
+  "serial_label_port": 10000,
+  "serial_port": "COM3",
+  "wifi_interface": "wlan0",
+  "monitor_interface": "wlan0mon",
+  "hostonly_interface": "eth0",
+  "arp_seconds": 25,
+  "deauth_batches": 3,
+  "recovery_seconds": 45
+}

@@ -303,6 +303,8 @@ def main():
     p.add_argument("--web", action="store_true", help="Serve the live phone/LAN dashboard")
     p.add_argument("--web-bind", default="0.0.0.0", help="Dashboard listen address")
     p.add_argument("--web-port", type=int, default=8080)
+    p.add_argument("--open-browser", action="store_true", help="Open the live dashboard after its server starts")
+    p.add_argument("--language", choices=('zh', 'en'), default='zh')
     p.add_argument(
         "--out",
         default=None,
@@ -350,6 +352,12 @@ def main():
             raise SystemExit(f"Dashboard could not start: {e}")
         print(f"Dashboard on this PC: http://localhost:{args.web_port}")
         print(f"Phone: http://<PC Wi-Fi IPv4>:{args.web_port} (same LAN)")
+        if args.open_browser:
+            import webbrowser
+            try:
+                webbrowser.open(f"http://localhost:{args.web_port}/?lang={args.language}")
+            except (webbrowser.Error, OSError) as error:
+                print(f"Could not open browser automatically: {error}")
     label_state = {"current": None, "intervals": []}
     min_offset = None
     last_uptime_sec = 0.0
