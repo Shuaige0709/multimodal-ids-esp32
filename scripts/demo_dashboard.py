@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
+import socket
 import threading
 import time
 
@@ -324,6 +325,17 @@ def save_dashboard_snapshot(state, path, metadata=None):
     return snapshot
 
 
+class DashboardHTTPServer(ThreadingHTTPServer):
+    # Windows SO_REUSEADDR can let an old replay and a live collector share
+    # one port. A successful bind must identify exactly one dashboard source.
+    allow_reuse_address = not hasattr(socket, 'SO_EXCLUSIVEADDRUSE')
+
+    def server_bind(self):
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def start_dashboard(state, host='0.0.0.0', port=8080):
     root = Path(__file__).with_name('demo_web')
     html = root.joinpath('index.html').read_bytes()
@@ -372,7 +384,7 @@ def start_dashboard(state, host='0.0.0.0', port=8080):
         def log_message(self, *args):
             pass
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = DashboardHTTPServer((host, port), Handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server

@@ -12,11 +12,11 @@
 
 ## 前置準備：一次設定，現場不改參數
 
-這套預設沿用已驗證的 AP：SSID `302`、2.4 GHz BSSID `68:02:B8:BB:AF:57`、channel 11；ESP32 `192.168.0.10`／`B0:CB:D8:C9:92:00`；gateway `192.168.0.1`／`68:02:B8:BB:EC:D4`；Windows VMnet1 `192.168.124.1`，Kali USB 無線介面 wlan0，ESP32 COM3。
+這套預設沿用已驗證的 AP：SSID `302`、2.4 GHz BSSID `68:02:B8:BB:AF:57`、channel 11；ESP32 MAC `B0:CB:D8:C9:92:00`（IP 自動取得）；gateway `192.168.0.1`／`68:02:B8:BB:EC:D4`；Windows VMnet1 `192.168.124.1`，Kali USB 無線介面 wlan0，ESP32 COM3。
 
-競賽使用自有／獲授權 AP，先把其 2.4 GHz 頻道固定為 11，並在 DHCP 預約 ESP32 MAC 對應 `.10`，避免當天換 IP。Windows 與手機可連同一台 AP 的 5 GHz，讓定向 2.4 GHz 攻擊較不易中斷展示畫面；這不保證不受共用 AP 負載影響。USB 線必須接著。
+競賽使用自有／獲授權 AP，先把其 2.4 GHz 頻道固定為 11，ESP32 的 DHCP 位址由 Kali 在啟動時從即時 UART 資料自動取得，不必固定為 `.10` 或 `.14`。Windows 與手機可連同一台 AP 的 5 GHz，讓定向 2.4 GHz 攻擊較不易中斷展示畫面；這不保證不受共用 AP 負載影響。USB 線必須接著。
 
-如果固定值有變，**事前只改 network.json**。AP 名稱與密碼仍需和韌體既有 `main/net_config.h` 一致；腳本不修改或公開密碼。Kali 事前儲存 SSID 302 的連線密碼、確認 USB 網卡交給 VM、VMnet1／host-only 路徑可用。網頁 HTTP 8080 與標註 UDP 10000 必須能從 Kali 到 Windows，沿用先前驗收的防火牆設定，不自動放寬防火牆。
+ESP32 IP 改變不需修改設定；啟動時先核對 ESP32 MAC、可信任 AP、防護狀態與閘道器，再採用即時 IP，且只保留於本次執行的記憶體。READY 之後 IP 若改變會停止，避免攻擊指向舊位址。`network.json` 的 `esp32_ip` 保留為相容欄位，不再決定本次攻擊目標。若換 AP、SSID、頻道或 gateway，**前置準備時仍需更新 network.json 並重新套用韌體的可信任網路設定**，不能自動信任陌生網路。AP 名稱與密碼仍需和韌體既有 `main/net_config.h` 一致；腳本不修改或公開密碼。Kali 事前儲存 SSID 302 的連線密碼、確認 USB 網卡交給 VM、VMnet1／host-only 路徑可用。網頁 HTTP 8080 與標註 UDP 10000 必須能從 Kali 到 Windows，沿用先前驗收的防火牆設定，不自動放寬防火牆。
 
 ## Windows：一個指令完成燒錄、英文網頁與 collector
 

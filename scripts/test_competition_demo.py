@@ -4,10 +4,30 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from host.attacks.competition_demo import ROOT, environment, load_profile, monitor_name, validate_live
+from host.attacks.competition_demo import ROOT, environment, load_profile, monitor_name, validate_live, resolve_live_target
 
 
 class CompetitionDemoTests(unittest.TestCase):
+    def test_dhcp_resolution_uses_verified_live_address_without_changing_profile(self):
+        self.d['protection']['device_ip'] = '192.168.0.88'
+        resolved = resolve_live_target(self.d, self.c, unlocked=True)
+        self.assertEqual(resolved['esp32_ip'], '192.168.0.88')
+        self.assertNotEqual(self.c['esp32_ip'], resolved['esp32_ip'])
+        self.assertEqual(environment(resolved)['NIDS_ESP32_IP'], '192.168.0.88')
+
+    def test_resolution_rejects_wrong_identity_gateway_replay_and_invalid_ip(self):
+        for change in ('mac', 'ap', 'gateway', 'replay', 'public', 'missing', 'same'):
+            d = copy.deepcopy(self.d)
+            if change == 'mac': d['latest']['host_mac'] = '00:11:22:33:44:55'
+            if change == 'ap': d['protection']['wireless']['bssid'] = '00:11:22:33:44:55'
+            if change == 'gateway': d['protection']['target'] = '192.168.0.99'
+            if change == 'replay': d['presentation'] = {'mode': 'recorded'}
+            if change == 'public': d['protection']['device_ip'] = '8.8.8.8'
+            if change == 'missing': d['protection']['device_ip'] = None
+            if change == 'same': d['protection']['device_ip'] = self.c['gateway_ip']
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                resolve_live_target(d, self.c, unlocked=True)
+
     def setUp(self):
         self.c = load_profile(ROOT / 'demo/competition/network.json')
         self.d = {'serial': True, 'age': .1, 'wifi': 'up', 'wifi_fresh': True,

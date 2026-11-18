@@ -7,6 +7,19 @@ from scripts.demo_dashboard import DashboardState, alarm_types, start_dashboard
 
 
 class DashboardTests(unittest.TestCase):
+    def test_second_server_cannot_share_a_live_dashboard_port(self):
+        server = start_dashboard(DashboardState(), '127.0.0.1', 0)
+        second = None
+        try:
+            with self.assertRaises(OSError):
+                second = start_dashboard(DashboardState(), '127.0.0.1', server.server_port)
+        finally:
+            if second is not None:
+                second.shutdown()
+                second.server_close()
+            server.shutdown()
+            server.server_close()
+
     def setUp(self):
         self.now = 100.0
         self.s = DashboardState(clock=lambda: self.now)

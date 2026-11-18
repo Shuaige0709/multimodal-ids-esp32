@@ -70,7 +70,10 @@ def validate_live(d, c, require_unlocked=False, require_connected=True):
     if not p.get('fresh') or p.get('mode') != 'on' or not p.get('wireless_fresh') or w.get('binding') != 'on':
         raise ValueError('Live ARP protection and trusted AP binding must both be On')
     if p.get('device_ip') != c['esp32_ip'] or p.get('target') != c['gateway_ip']:
-        raise ValueError('Live IP/gateway differs from network.json; check DHCP reservation')
+        raise ValueError(
+            f"Live IP/gateway differs from network.json: live ESP32={p.get('device_ip')}, "
+            f"gateway={p.get('target')}; configured ESP32={c['esp32_ip']}, "
+            f"gateway={c['gateway_ip']}. Update the profile or DHCP reservation.")
     if w.get('bssid', '').lower() != c['ap_bssid'].lower() or str(d.get('latest', {}).get('channel')) != str(c['channel']):
         raise ValueError('Live AP/channel differs from network.json')
     if d.get('latest', {}).get('host_mac', '').lower() != c['esp32_mac'].lower():
@@ -94,13 +97,39 @@ def monitor_name(iw_text, c):
     raise RuntimeError('The configured adapter did not enter monitor mode')
 
 
-def ready(c, unlocked=False, seconds=20):
+def resolve_live_target(d, c, unlocked=False):
+    """Resolve DHCP address only after validating the provisioned identities.
+
+    Gateway/AP identity remains provisioned: never learn a trusted router from
+    whatever the network advertises during an ARP demonstration.
+    """
+    candidate = dict(c)
+    value = d.get('protection', {}).get('device_ip')
+    try:
+        address = ipaddress.ip_address(value)
+    except (ValueError, TypeError):
+        raise ValueError('Live ESP32 address is not available yet') from None
+    if address.version != 4 or not address.is_private or address.is_unspecified or address.is_loopback:
+        raise ValueError('Live ESP32 address must be a private, non-loopback IPv4 address')
+    candidate['esp32_ip'] = str(address)
+    if candidate['esp32_ip'] == candidate['gateway_ip']:
+        raise ValueError('Live ESP32 address cannot equal the gateway')
+    validate_live(d, candidate, require_unlocked=unlocked)
+    return candidate
+
+
+def ready(c, unlocked=False, seconds=20, discover=False):
     deadline = time.monotonic() + seconds
     error = None
     while time.monotonic() < deadline:
         try:
             d = live_status(c)
-            validate_live(d, c, require_unlocked=unlocked)
+            if discover:
+                resolved = resolve_live_target(d, c, unlocked=unlocked)
+                c.update(resolved)
+                print('Live target verified:', c['esp32_ip'], 'MAC:', c['esp32_mac'])
+            else:
+                validate_live(d, c, require_unlocked=unlocked)
             return d
         except (OSError, ValueError) as problem:
             error = problem
@@ -192,7 +221,7 @@ def main():
     env = environment(c)
     if args.dry_run:
         print('PLAN ONLY: no commands, requests, labels or attacks executed.')
-        print('Fixed target:', c['esp32_ip'], c['esp32_mac'], 'AP:', c['ap_bssid'], 'channel:', c['channel'])
+        print('Target: live UART IPv4 discovery for', c['esp32_mac'], 'AP:', c['ap_bssid'], 'channel:', c['channel'])
         print('Prepare managed Wi-Fi; verify LIVE USB, On policy and clean ARP state.')
         print('Enter -> one-way ARP:', c['arp_seconds'], 'seconds, or Enter to stop early.')
         print('Auto-switch to monitor; Enter -> targeted deauth:', c['deauth_batches'], 'batches.')
@@ -213,7 +242,8 @@ def main():
         link = subprocess.check_output(['iw', 'dev', c['wifi_interface'], 'link'], text=True)
         if not re.search(r'^\s*SSID:\s*' + re.escape(c['ssid']) + r'\s*$', link, re.M):
             raise RuntimeError('Kali is not associated with the configured SSID')
-        ready(c, unlocked=True)
+        ready(c, unlocked=True, discover=True)
+        env = environment(c)
         print('\nREADY. Live data confirmed; ARP protection On. No attack is running.')
         if args.prepare_only:
             return
