@@ -179,6 +179,7 @@ for ((i=1; i<=repeats; i++)); do
     exit 1
   fi
   if [[ "$batch_rc" -ne 0 ]]; then
+    if [[ "${NIDS_DEMO_STRICT:-0}" == 1 ]]; then exit "$batch_rc"; fi
     echo ">>> WARN: aireplay exit ${batch_rc} (continuing next batch)" >&2
   fi
   sleep 0.5

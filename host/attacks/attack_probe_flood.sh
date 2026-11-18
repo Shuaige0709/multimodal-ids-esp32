@@ -81,5 +81,6 @@ fi
 sleep 1
 send_label STOP PROBE_FLOOD
 LABEL_SENT=0
+if [[ "$rc" -ne 124 && "$rc" -ne 0 ]]; then exit "$rc"; fi
 echo " >>> PROBE_FLOOD FINISHED"
 echo " >>> Next: sudo -E ./host/attacks/prepare_wifi.sh managed"

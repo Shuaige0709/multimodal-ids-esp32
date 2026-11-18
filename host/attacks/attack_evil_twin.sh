@@ -121,5 +121,6 @@ fi
 sleep 1
 send_label STOP EVIL_TWIN
 LABEL_SENT=0
+if [[ "$rc" -ne 124 && "$rc" -ne 0 ]]; then exit "$rc"; fi
 echo " >>> EVIL_TWIN FINISHED"
 echo " >>> Next: sudo -E ./host/attacks/prepare_wifi.sh managed"
