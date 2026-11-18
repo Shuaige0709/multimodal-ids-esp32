@@ -331,6 +331,9 @@ def start_dashboard(state, host='0.0.0.0', port=8080):
               for name, mime in (
                   ('dashboard.css', 'text/css; charset=utf-8'),
                   ('dashboard.js', 'text/javascript; charset=utf-8'),
+                  ('watch-effects.js', 'text/javascript; charset=utf-8'),
+                  ('shader-engine.js', 'text/javascript; charset=utf-8'),
+                  ('shaders-LICENSE.txt', 'text/plain; charset=utf-8'),
                   ('Geist.woff2', 'font/woff2'),
                   ('favicon.svg', 'image/svg+xml'),
                   ('Geist-LICENSE.txt', 'text/plain; charset=utf-8'))}

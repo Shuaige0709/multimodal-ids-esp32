@@ -1,0 +1,370 @@
+{
+  "On": {
+    "csv": "data/raw/DEFENSE_On_Optional_20261118_113635.csv",
+    "intervals": [
+      {
+        "type": "ARP_SPOOF",
+        "start": "2026-11-18T11:45:15.901225",
+        "end": "2026-11-18T11:46:07.715307",
+        "windows": 504,
+        "alarm_windows": 1,
+        "seconds": 51.814,
+        "during": {
+          "ping_ok": 46,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 26,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "ARP_SPOOF",
+        "start": "2026-11-18T11:46:39.560717",
+        "end": "2026-11-18T11:47:29.941335",
+        "windows": 489,
+        "alarm_windows": 0,
+        "seconds": 50.381,
+        "during": {
+          "ping_ok": 4,
+          "ping_timeout": 27,
+          "ping_error": 0,
+          "garp_sent": 2,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 16,
+          "ping_timeout": 7,
+          "ping_error": 0,
+          "garp_sent": 1,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "PROBE_FLOOD",
+        "start": "2026-11-18T11:48:04.654212",
+        "end": "2026-11-18T11:48:36.674510",
+        "windows": 315,
+        "alarm_windows": 300,
+        "seconds": 32.02,
+        "during": {
+          "ping_ok": 28,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "BEACON_FLOOD",
+        "start": "2026-11-18T11:49:07.527420",
+        "end": "2026-11-18T11:49:39.578522",
+        "windows": 312,
+        "alarm_windows": 291,
+        "seconds": 32.051,
+        "during": {
+          "ping_ok": 28,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "EVIL_TWIN",
+        "start": "2026-11-18T11:50:10.298727",
+        "end": "2026-11-18T11:50:42.451442",
+        "windows": 309,
+        "alarm_windows": 278,
+        "seconds": 32.153,
+        "during": {
+          "ping_ok": 29,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "DEAUTH",
+        "start": "2026-11-18T11:51:13.272530",
+        "end": "2026-11-18T11:51:48.189583",
+        "windows": 324,
+        "alarm_windows": 274,
+        "seconds": 34.917,
+        "during": {
+          "ping_ok": 1,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 9
+        },
+        "after_30s": {
+          "ping_ok": 18,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 1
+        }
+      },
+      {
+        "type": "DISASSOC_FLOOD",
+        "start": "2026-11-18T11:52:18.910141",
+        "end": "2026-11-18T11:52:51.472337",
+        "windows": 297,
+        "alarm_windows": 255,
+        "seconds": 32.562,
+        "during": {
+          "ping_ok": 1,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 8
+        },
+        "after_30s": {
+          "ping_ok": 20,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 1
+        }
+      }
+    ],
+    "outages": [
+      {
+        "id": 2,
+        "start": "2026-11-18T11:52:20",
+        "end": "2026-11-18T11:52:59",
+        "outcome": "recovered",
+        "attempts": 9,
+        "start_known": true,
+        "duration": 38.8
+      },
+      {
+        "id": 1,
+        "start": "2026-11-18T11:51:14",
+        "end": "2026-11-18T11:51:58",
+        "outcome": "recovered",
+        "attempts": 10,
+        "start_known": true,
+        "duration": 43.5
+      }
+    ],
+    "wireless": {
+      "binding": "on",
+      "pmf": "optional",
+      "bssid": "68:02:B8:BB:AF:57"
+    }
+  },
+  "Off": {
+    "csv": "data/raw/DEFENSE_Off_Optional_20261118_132554.csv",
+    "intervals": [
+      {
+        "type": "ARP_SPOOF",
+        "start": "2026-11-18T13:28:40.163861",
+        "end": "2026-11-18T13:29:31.978321",
+        "windows": 503,
+        "alarm_windows": 1,
+        "seconds": 51.814,
+        "during": {
+          "ping_ok": 4,
+          "ping_timeout": 27,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "ARP_SPOOF",
+        "start": "2026-11-18T13:30:03.825458",
+        "end": "2026-11-18T13:30:54.309371",
+        "windows": 490,
+        "alarm_windows": 0,
+        "seconds": 50.484,
+        "during": {
+          "ping_ok": 2,
+          "ping_timeout": 28,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 26,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "PROBE_FLOOD",
+        "start": "2026-11-18T13:31:28.803379",
+        "end": "2026-11-18T13:32:00.933213",
+        "windows": 317,
+        "alarm_windows": 302,
+        "seconds": 32.13,
+        "during": {
+          "ping_ok": 29,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "BEACON_FLOOD",
+        "start": "2026-11-18T13:32:31.779034",
+        "end": "2026-11-18T13:33:03.892629",
+        "windows": 312,
+        "alarm_windows": 289,
+        "seconds": 32.114,
+        "during": {
+          "ping_ok": 29,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "EVIL_TWIN",
+        "start": "2026-11-18T13:33:34.510200",
+        "end": "2026-11-18T13:34:06.766740",
+        "windows": 313,
+        "alarm_windows": 289,
+        "seconds": 32.257,
+        "during": {
+          "ping_ok": 29,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        },
+        "after_30s": {
+          "ping_ok": 26,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "DEAUTH",
+        "start": "2026-11-18T13:34:37.439355",
+        "end": "2026-11-18T13:35:11.622474",
+        "windows": 315,
+        "alarm_windows": 264,
+        "seconds": 34.183,
+        "during": {
+          "ping_ok": 1,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 8
+        },
+        "after_30s": {
+          "ping_ok": 27,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 0
+        }
+      },
+      {
+        "type": "DISASSOC_FLOOD",
+        "start": "2026-11-18T13:35:42.445474",
+        "end": "2026-11-18T13:36:15.066127",
+        "windows": 302,
+        "alarm_windows": 258,
+        "seconds": 32.621,
+        "during": {
+          "ping_ok": 1,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 8
+        },
+        "after_30s": {
+          "ping_ok": 21,
+          "ping_timeout": 0,
+          "ping_error": 0,
+          "garp_sent": 0,
+          "disconnect_logs": 1
+        }
+      }
+    ],
+    "outages": [
+      {
+        "id": 2,
+        "start": "2026-11-18T13:35:44",
+        "end": "2026-11-18T13:36:20",
+        "outcome": "recovered",
+        "attempts": 9,
+        "start_known": true,
+        "duration": 37.0
+      },
+      {
+        "id": 1,
+        "start": "2026-11-18T13:34:38",
+        "end": "2026-11-18T13:35:11",
+        "outcome": "recovered",
+        "attempts": 8,
+        "start_known": true,
+        "duration": 32.7
+      }
+    ],
+    "wireless": {
+      "binding": "off",
+      "pmf": "optional",
+      "bssid": "68:02:B8:BB:AF:57"
+    }
+  }
+}

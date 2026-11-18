@@ -1,19 +1,44 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="description" content="查看 ESP32 的即時告警、連線恢復進度與斷線時間。"><meta name="theme-color" content="#f6f7f8"><title>燕子守望 · 無線安全監控</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/dashboard.css"></head>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="description" content="查看 ESP32 即時告警、連線與自動防護狀態。">
+<meta name="theme-color" content="#f6f7f8"><title>燕子守望 · 無線安全監控</title>
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/dashboard.css">
+</head>
 <body>
-<a href="#main" class="skip body-2">跳至監控內容</a>
+<a href="#main" class="skip body-2" data-i18n="skip">跳至監控內容</a>
 <div class="shell">
-<header class="topbar"><a class="brand title-3" href="/" aria-label="燕子守望首頁"><svg viewBox="0 0 48 48" class="brandmark" aria-hidden="true"><path fill="currentColor" d="M3 7l19 16L30 5l-1 16 13-4 4 3-9 4-7 5-5 14-3-12L3 40l10-15z"/></svg>燕子守望<span class="brand-divider"></span><span class="brand-sub caption-1">無線安全監控</span></a><div class="live caption-1" id="live"><span class="live-dot"></span><span id="liveText">正在連接</span></div></header>
+<header class="topbar">
+  <a class="brand title-3" href="/"><svg viewBox="0 0 48 48" class="brandmark" aria-hidden="true"><path fill="currentColor" d="M3 7l19 16L30 5l-1 16 13-4 4 3-9 4-7 5-5 14-3-12L3 40l10-15z"/></svg><span data-i18n="brand">燕子守望</span></a>
+  <div class="top-actions"><div class="live caption-1" id="live"><span class="live-dot"></span><span id="liveText">等待資料</span></div><div class="language" role="group" aria-label="Language"><button type="button" data-lang="zh" lang="zh-Hant" aria-pressed="true">中文</button><button type="button" data-lang="en" lang="en" aria-pressed="false">Eng</button></div></div>
+</header>
 <main id="main">
+<div id="playback" class="playback body-3" role="status" hidden></div>
 <div id="error" class="error body-6" role="status" hidden></div>
-<section class="overview" aria-label="即時監控">
-<div class="detection"><div class="eyebrow caption-1"><span class="status-mark" id="statusMark"></span>ESP32 即時偵測</div><h1 class="heading-1" id="status" aria-live="polite">等待設備資料</h1><p class="body-3 summary" id="description">連接設備後，即可查看監控狀態。</p><div class="attack-line" id="attackLine"><span class="caption-2 muted">目前告警</span><span class="title-2" id="attack">等待更新</span></div></div>
-<aside class="recovery" aria-label="連線恢復進度"><div class="recovery-top"><span class="title-4" id="durationLabel">斷線持續時間</span><span class="status-chip caption-3" id="phaseLabel">尚未確認</span></div><div class="timer heading-2" id="duration">—</div><p class="caption-2 muted" id="recoveryDetail">等待設備連線回報</p><ol class="steps caption-1" id="steps"><li data-step="down"><span>1</span>斷線</li><li data-step="reconnecting"><span>2</span>重連中</li><li data-step="recovered"><span>3</span>已恢復</li></ol></aside>
+<section class="overview" data-i18n-aria="overview">
+  <div class="detection"><div class="eyebrow caption-1"><span class="status-mark" id="statusMark"></span><span data-i18n="deviceWatch">ESP32 無線安全監控</span></div><h1 class="heading-1" id="status" aria-live="polite">等待設備資料</h1><p class="body-3 summary" id="description">連接設備後，即可查看監控狀態。</p>
+    <div class="watch-art" id="watchArt" data-tone="monitoring" data-i18n-aria="effectsArt"><canvas id="rippleFallback" aria-hidden="true"></canvas><canvas id="shaderCanvas" aria-hidden="true" hidden></canvas><svg class="watch-swallow" viewBox="0 0 80 80" aria-hidden="true"><path fill="currentColor" d="M15 20l23 20L48 16l-1 20 17-5 5 4-12 5-11 7-6 20-3-17L15 62l12-22z"/></svg></div>
+    <div class="attack-line"><span class="caption-2 muted" data-i18n="currentAlert">目前告警</span><strong class="title-2" id="attack">等待更新</strong></div></div>
+  <aside class="recovery" id="connectionPanel" data-tone="neutral" data-i18n-aria="connectionPanel">
+    <div class="recovery-top"><span class="title-3" data-i18n="connectionTitle">裝置通訊</span><span class="status-chip caption-3" id="phaseLabel">等待資料</span></div>
+    <h2 class="heading-4" id="connectionHeadline" aria-live="polite">等待連線回報</h2>
+    <div class="outage-timer" id="outageTimer" hidden><span class="caption-2" data-i18n="outageTime">本次中斷時間</span><strong class="heading-2" id="duration">00:00</strong></div>
+    <p class="body-3" id="connectionDetail">尚未收到設備狀態。</p>
+    <div class="router-line"><span class="caption-2 muted" data-i18n="routerResponse">路由器回應</span><strong class="title-3" id="routerStatus">尚未確認</strong></div>
+    <div class="last-recovery" id="lastRecovery" hidden></div>
+  </aside>
 </section>
-<section class="facts" aria-label="設備與資料來源"><div><span class="caption-2 muted">設備連線</span><strong class="title-2" id="wifi">尚未確認</strong><span class="caption-2 muted" id="wifiHint">等待設備回報</span></div><div><span class="caption-2 muted">UART 資料</span><strong class="title-2" id="uart">等待中</strong><span class="caption-2 muted" id="uartHint">USB 連接電腦</span></div><div><span class="caption-2 muted">近期告警</span><strong class="title-2"><span id="count">0</span> 段</strong><span class="caption-2 muted" id="lastAlert">尚無告警</span></div></section>
-<section class="protection" aria-label="ARP 防護與通訊驗證"><div class="journal-head"><h2 class="heading-5">ARP 自動防護</h2><span class="status-chip caption-3" id="guardMode">等待資料</span></div><div class="protection-grid"><div><p class="caption-2 muted">防護動作</p><h3 class="heading-5" id="guardAction">尚未確認</h3><p class="caption-2 muted" id="guardDetail">等待設備防護回報</p></div><div><p class="caption-2 muted">通訊驗證 · 閘道器回應</p><h3 class="heading-5" id="probeStatus">尚未驗證</h3><p class="caption-2 muted" id="probeDetail">等待實際測試回覆</p></div></div><p class="caption-2 muted" id="wirelessDefense">等待無線防護回報</p><div id="guardHistory" class="guard-history caption-2"></div></section>
-<section class="journal" aria-label="事件紀錄"><div class="journal-head"><div><h2 class="heading-5">事件紀錄</h2><p class="caption-2 muted" id="session">本次展示</p></div><button class="button-sm" id="download" disabled>匯出紀錄</button></div><div class="journal-columns"><section><div class="column-head"><h3 class="title-3">攻擊告警</h3><span class="caption-2 muted" id="alertCount">0 段</span></div><div id="events"><div class="empty body-6">等待第一筆設備回報。</div></div></section><section><div class="column-head"><h3 class="title-3">斷線與恢復</h3><span class="caption-2 muted" id="outageCount">0 次</span></div><div id="outages"><div class="empty body-6">連線事件將顯示在這裡。</div></div></section></div></section>
-</main><footer class="caption-2 muted"><span>燕子守望 · ESP32 入侵偵測</span><span id="updated">等待更新</span></footer></div>
-<script src="/assets/dashboard.js"></script>
+<section class="protection" data-i18n-aria="protectionTitle">
+  <div class="section-head"><h2 class="heading-5" data-i18n="protectionTitle">自動防護</h2><span class="status-chip caption-3" id="guardMode">等待資料</span></div>
+  <div class="protection-grid"><div><h3 class="heading-6" id="guardAction">等待防護回報</h3><p class="body-3 muted" id="guardDetail">尚未收到防護狀態。</p></div><div class="verification"><span class="caption-2 muted" data-i18n="verification">通訊確認</span><strong class="heading-6" id="probeStatus">尚未確認</strong><p class="caption-2 muted" id="probeDetail">正在等待路由器回覆。</p></div></div>
+  <div id="guardHistory" class="guard-history caption-2"></div>
+</section>
+<section class="journal" data-i18n-aria="history">
+  <div class="section-head"><div><h2 class="heading-5" data-i18n="history">最近發生的事</h2><p class="caption-2 muted" id="session"></p></div><button class="button-sm" id="download" data-i18n="export" disabled>匯出紀錄</button></div>
+  <div class="journal-columns"><section><div class="column-head"><h3 class="title-3" data-i18n="alerts">攻擊告警</h3><span class="caption-2 muted" id="alertCount">0</span></div><div id="events"></div></section><section><div class="column-head"><h3 class="title-3" data-i18n="outages">斷線與恢復</h3><span class="caption-2 muted" id="outageCount">0</span></div><div id="outages"></div></section></div>
+</section>
+<details class="technical"><summary class="title-3" data-i18n="technical">技術資訊</summary><div class="technical-controls"><button id="motionToggle" class="effects-toggle button-sm" type="button" aria-pressed="true" data-i18n="effectsToggle">動態效果</button></div><div class="technical-grid body-6"><div><span data-i18n="usbData">USB 資料</span><strong id="uart"></strong></div><div><span data-i18n="deviceIp">裝置 IP</span><strong id="deviceIp"></strong></div><div><span data-i18n="apPolicy">AP 連線限制</span><strong id="wirelessDefense"></strong></div><div><span data-i18n="probeCounts">路由器測試回覆</span><strong id="probeCounts"></strong></div><div><span data-i18n="repairAttempts">修復通知次數</span><strong id="garpCount"></strong></div><div><span data-i18n="pmfPolicy">PMF 設定</span><strong id="pmfPolicy"></strong></div></div></details>
+</main><footer class="caption-2 muted"><span data-i18n="footer">燕子守望 · ESP32 入侵偵測</span><span id="updated">等待更新</span></footer>
+</div><script src="/assets/dashboard.js"></script><script type="module" src="/assets/watch-effects.js"></script>
 </body></html>

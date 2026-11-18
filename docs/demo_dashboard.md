@@ -1,5 +1,7 @@
 # 手機即時展示網頁
 
+正式競賽請優先看 [五張英文投影片與現場攻擊手冊](../demo/competition/README.md)。[既有日誌回放](demo_presentation_flow.md) 僅供開發檢視；防護驗收已收案，結果見 [2026-11-18 驗收結果與限制](demo_acceptance_results_20261118.md)。
+
 ESP32 用 USB/UART 傳送資料給 Windows；Windows 同時寫 CSV、原始主控台日誌，並提供網頁給手機。偵測仍在 ESP32 執行。網頁不需要 APK、雲端或 Raspberry Pi，首次加入每秒連線狀態回報時需要更新韌體；之後開啟網頁不必重新燒錄。
 
 ## 開始展示

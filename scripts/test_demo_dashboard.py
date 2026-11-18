@@ -171,7 +171,8 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(response.headers['Cache-Control'], 'no-store')
             with urlopen(url + '/api/status') as response:
                 self.assertEqual(json.load(response)['wifi'], 'unknown')
-            for asset in ('dashboard.css', 'dashboard.js', 'Geist.woff2', 'favicon.svg'):
+            for asset in ('dashboard.css', 'dashboard.js', 'Geist.woff2', 'favicon.svg',
+                          'watch-effects.js', 'shader-engine.js', 'shaders-LICENSE.txt'):
                 with urlopen(url + '/assets/' + asset) as response:
                     self.assertGreater(len(response.read()), 0)
             with self.assertRaises(HTTPError):
