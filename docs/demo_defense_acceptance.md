@@ -1,5 +1,7 @@
 # Demo 防護總驗收
 
+已完成 On／Off 的七階段驗收後，請改用 [最後一輪 PMF 確認與收案準則](demo_defense_final_check.md)，不必重跑本頁整套流程。
+
 ## 先做這兩步
 
 Windows：先 Ctrl+C 關掉原本 UART collector 或 ESP-IDF monitor。USB 保持接著，在專案目錄執行：

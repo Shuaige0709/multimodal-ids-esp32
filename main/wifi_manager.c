@@ -202,6 +202,9 @@ void wifi_manager_start(void)
         }
         for (int i = 0; i < 6; i++) wifi_config.sta.bssid[i] = (uint8_t)b[i];
         wifi_config.sta.bssid_set = true;
+        /* Reject open/legacy-security clones as well as other BSSIDs.
+         * This provisioned deployment uses WPA2/WPA3 Personal. */
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     }
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));

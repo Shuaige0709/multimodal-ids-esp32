@@ -3,8 +3,13 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/netconfig.sh"
+PMF_ONLY=0
+if [[ "${1:-}" == --pmf-only && "$#" == 1 ]]; then PMF_ONLY=1
+elif (( $# )); then echo 'Unknown option; use --pmf-only or no arguments'; exit 1; fi
 [[ "$EUID" == 0 ]] || { echo 'Use sudo -E bash host/attacks/demo_acceptance.sh'; exit 1; }
-for name in setsid arpspoof mdk4 aireplay-ng python3 timeout; do
+tools=(setsid aireplay-ng python3 timeout)
+if [[ "$PMF_ONLY" == 0 ]]; then tools+=(arpspoof mdk4); fi
+for name in "${tools[@]}"; do
     command -v "$name" >/dev/null || { echo "Missing tool: $name"; exit 1; }
 done
 python3 -c 'import scapy.all' || { echo 'Install python3-scapy first'; exit 1; }
@@ -53,13 +58,17 @@ ensure_wifi_associated "$WIFI_IFACE" "$SSID"
 ensure_label_path
 echo 'Baseline: 30 seconds. Keep the Windows UART dashboard running.'
 sleep 30
-run_phase arp_one_way arp_guard_test.sh
-run_phase arp_two_way arpspoof.sh
+if [[ "$PMF_ONLY" == 0 ]]; then
+    run_phase arp_one_way arp_guard_test.sh
+    run_phase arp_two_way arpspoof.sh
+fi
 switched=1
 bash "$DIR/prepare_wifi.sh" monitor
-run_phase probe attack_probe_flood.sh
-run_phase beacon attack_beacon_flood.sh
-run_phase twin attack_evil_twin.sh
+if [[ "$PMF_ONLY" == 0 ]]; then
+    run_phase probe attack_probe_flood.sh
+    run_phase beacon attack_beacon_flood.sh
+    run_phase twin attack_evil_twin.sh
+fi
 run_phase deauth attack_deauth.sh
 run_phase disassoc attack_disassoc.sh
 echo "Campaign finished. Tool logs: $LOG_DIR"
