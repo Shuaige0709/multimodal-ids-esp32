@@ -74,14 +74,14 @@ nmcli device wifi connect '302' ifname wlan0 --ask
 
 **OFF 預期觀察：**ARP 異常告警、防護仍關閉、實際 Ping 回覆可能中斷。若整場仍通訊正常，先查可見性、ARP 工具是否持續存活、AP client isolation；不能把沒有影響的 OFF 場當成防護有效的證據。
 
-攻擊結束後保持 collector 再錄 **30 秒**，觀察自然恢復。接著在 Windows 一般 PowerShell 匯出本場網頁紀錄：
+攻擊結束後保持 collector 再錄 **30 秒**，觀察自然恢復。新版在按 Ctrl+C 時會自動保存 `<CSV檔名>.dashboard.json`，因此可以直接結束。若想在結束前另外匯出，使用 Windows 一般 PowerShell：
 
 ```powershell
 $stamp = Get-Date -Format yyyyMMdd_HHmmss
 Invoke-RestMethod http://localhost:8080/api/status | ConvertTo-Json -Depth 12 | Set-Content "data\raw\ARP_OFF_01_$stamp.json" -Encoding utf8
 ```
 
-回 collector 終端按 Ctrl+C。CSV 和完整 `.csv.log` 已自動儲存，檔名包含 `ARP_OFF_01`，不用填 QC 或 manifest。
+回 collector 終端按 Ctrl+C。CSV、完整 `.csv.log` 和新版自動保存的 `.csv.dashboard.json` 均以 `ARP_OFF_01` 命名，不用填 QC 或 manifest。
 
 ## 3. 再錄防護開啟 ON_01
 
@@ -111,7 +111,7 @@ Flash 會重新開機，清除上一場 RAM 中的 ARP 表與鎖定狀態。ON �
 3. 真正收到三次連續 Ping 回覆，才顯示可通訊。
 4. 先前有兩次連續 timeout、修復後再有三次連續回覆，才顯示「通訊已恢復」。如果防護夠快、從未觀測到持續中斷，會顯示「可正常通訊」，不用為了畫面漂亮故意延遲防護。
 
-攻擊停止後再錄 30 秒，匯出：
+攻擊停止後再錄 30 秒即可 Ctrl+C，由新版自動保存摘要。手動額外匯出的指令如下：
 
 ```powershell
 $stamp = Get-Date -Format yyyyMMdd_HHmmss
@@ -153,3 +153,13 @@ idf.py -p COM3 flash
 開關都不需要修改 Kali function name。鎖定只在 RAM，關閉後重燒／重啟就不會沿用該靜態項目。換 AP 時需重新確認可信任設定；新版不會把陌生網路自動學成可信任。
 
 實作依據：[ESP-IDF ICMP Echo](https://docs.espressif.com/projects/esp-idf/en/v5.5.3/esp32/api-reference/protocols/icmp_echo.html)、[lwIP 靜態 ARP](https://github.com/lwip-tcpip/lwip/blob/master/src/core/ipv4/etharp.c)。
+
+## 若先 Ctrl+C 才想到匯出
+
+不必先重錄。先找當場的 CSV 與 `.csv.log`，在相同 Python 環境重建：
+
+```powershell
+python scripts\recover_dashboard.py data\raw\ARP_OFF_01_20261118_002420.csv.log
+```
+
+輸出為同一 CSV 名稱加上 `.recovered.dashboard.json`，保留歷史時間並註明來源。已存在的輸出不會被覆蓋。第一組結果與已恢復的紀錄見 [2026-11-18 首組對照](arp_guard_first_pair_20261118.md)。

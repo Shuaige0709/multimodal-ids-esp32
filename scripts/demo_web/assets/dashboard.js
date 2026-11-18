@@ -70,9 +70,11 @@ function connection(d) {
 function protection(p) {
   p = p || {fresh:false,mode:'unknown',action:'unknown',communication:'unknown',actions:[]};
   text('guardMode', !p.fresh ? '等待更新' : p.mode === 'on' ? '防護開啟' : p.mode === 'off' ? '防護關閉' : '尚未確認');
-  const actions = {locked:'已修復並鎖定',watch:'監看中',detected:'發現閘道器異常',error:'修復失敗',invalid:'尚未設定可信任網路',waiting:'等待指定網路',unknown:'尚未確認'};
+  const actions = {locked:'本機映射已鎖定',garp_sent:'已廣播正確映射，等待驗證',garp_error:'映射廣播失敗',watch:'監看中',detected:'發現閘道器異常',error:'修復失敗',invalid:'尚未設定可信任網路',waiting:'等待指定網路',unknown:'尚未確認'};
   text('guardAction', p.fresh ? actions[p.action] || '尚未確認' : '等待防護回報');
-  text('guardDetail', !p.fresh ? '請確認設備持續傳送資料' : p.mode === 'off' ? '僅偵測，不修改 ARP 映射' : p.action === 'locked' ? '已完成 ' + p.repairs + ' 次修復' : '比對事先設定的可信任閘道器');
+  text('guardDetail', !p.fresh ? '請確認設備持續傳送資料' : p.mode === 'off' ? '僅偵測，不修改 ARP 映射' : p.action === 'locked' ? '已鎖定可信任閘道器 · ' + (p.garp?.count || 0) + ' / 12 次映射廣播' : '比對事先設定的可信任閘道器');
+  const w = p.wireless || {};
+  text('wirelessDefense', !p.wireless_fresh ? '等待無線防護回報' : (w.binding === 'on' ? '限定可信任 AP' : '未限制 AP') + ' · ' + (w.pmf === 'required' ? '要求 PMF 保護連線' : 'PMF 相容模式'));
   const comm = {unknown:'尚未驗證',checking:'驗證中',reachable:'可正常通訊',recovered:'通訊已恢復',failed:'未收到回覆',error:'驗證未完成'};
   text('probeStatus', comm[p.communication] || '尚未驗證');
   $('probeStatus').className = 'heading-5 ' + (['reachable','recovered'].includes(p.communication) ? 'probe-good' : p.communication === 'failed' ? 'probe-bad' : '');
@@ -94,6 +96,7 @@ function render(d) {
   else if (phase === 'down') { title = '設備已斷線'; desc = '正在等待設備開始重連。'; tone = 'warning'; }
   else if (phase === 'reconnecting' || phase === 'connecting') { title = '正在重新連線'; desc = '連線恢復後，會保留這次中斷的紀錄。'; tone = 'warning'; }
   else if (phase === 'recovered') { title = '設備已恢復'; desc = '無線連線已恢復，持續觀察新告警。'; }
+  else if (d.protection?.communication === 'failed') { title = '通訊未通過驗證'; desc = 'Wi-Fi 仍連線，但閘道器未回覆測試。'; tone = 'warning'; }
   else if (d.state === 'waiting') { title = '等待偵測資料'; desc = '設備尚未傳來新的偵測結果。'; tone = 'warning'; }
   text('status', title); text('description', desc); $('statusMark').className = 'status-mark ' + tone;
   const fresh = d.serial && d.age !== null && d.age < 5;

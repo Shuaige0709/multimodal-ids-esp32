@@ -15,3 +15,9 @@
 #ifndef ARP_GUARD_BSSID
 #define ARP_GUARD_BSSID ""
 #endif
+#ifndef WIFI_TRUSTED_AP_ENABLE
+#define WIFI_TRUSTED_AP_ENABLE ARP_GUARD_ENABLE
+#endif
+#ifndef WIFI_PMF_REQUIRED
+#define WIFI_PMF_REQUIRED 0
+#endif

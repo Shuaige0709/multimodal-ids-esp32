@@ -2,11 +2,13 @@
  * A separate low-priority task verifies gateway reachability with ICMP. */
 #include "arp_guard.h"
 #include "arp_guard_config.h"
+#include "garp_policy.h"
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/etharp.h"
@@ -19,7 +21,8 @@ static const char *TAG = "ARP_GUARD";
 typedef struct {
     ip4_addr_t gateway;
     uint8_t trusted[6], observed[6], bssid[6];
-    bool found, install, remove;
+    bool found, install, remove, gratuitous;
+    ip4_addr_t local_ip;
     err_t result;
 } arp_operation_t;
 
@@ -41,6 +44,18 @@ static void arp_access(void *arg)
         return;
     }
     op->result = ERR_OK;
+    if (op->gratuitous) {
+        wifi_ap_record_t ap;
+        if (!netif_is_up(netif_default) || !netif_is_link_up(netif_default) ||
+            !op->local_ip.addr || netif_ip4_addr(netif_default)->addr != op->local_ip.addr ||
+            esp_wifi_sta_get_ap_info(&ap) != ESP_OK || memcmp(ap.bssid, op->bssid, 6) != 0) {
+            op->result = ERR_RTE;
+            return;
+        }
+        /* Announces this station's real IP/MAC, never impersonates the gateway. */
+        op->result = etharp_gratuitous(netif_default);
+        return;
+    }
 #if ETHARP_SUPPORT_STATIC_ENTRIES
     if (op->install) {
         wifi_ap_record_t ap;
@@ -116,6 +131,7 @@ static void guard_task(void *arg)
     esp_err_t ping_error = esp_ping_new_session(&cfg, &callbacks, &ping);
     bool locked = false, armed_after_reconnect = false;
     uint32_t repairs = 0, sent = 0, received = 0;
+    garp_policy_t garp = {0};
     while (1) {
         esp_netif_ip_info_t info = {0};
         esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -136,6 +152,7 @@ static void guard_task(void *arg)
                 armed_after_reconnect = true;
             }
             locked = false;
+            garp_due(&garp, false, false, esp_timer_get_time());
             ESP_LOGI(TAG, "[ARP_GUARD] mode=%s action=waiting repairs=%lu err=0",
                      ARP_GUARD_ENABLE ? "on" : "off", (unsigned long)repairs);
             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -166,6 +183,10 @@ static void guard_task(void *arg)
                  locked ? "locked" : mismatch ? "detected" : "watch",
                  (unsigned long)repairs, (int)(dispatched != ERR_OK ? dispatched : op.result),
                  IP2STR(&info.ip));
+        ESP_LOGI(TAG, "[WIFI_DEFENSE] binding=%s pmf=%s bssid=%s garp=%u budget=12",
+                 WIFI_TRUSTED_AP_ENABLE ? "on" : "off",
+                 WIFI_PMF_REQUIRED ? "required" : "optional", wifi_manager_ap_bssid_str(),
+                 garp.attempts);
         if (ping_error != ESP_OK) {
             ESP_LOGW(TAG, "[ARP_PROBE] target=" IPSTR " result=error sent=%lu received=%lu repair=%lu",
                      IP2STR(&gateway), (unsigned long)sent, (unsigned long)received,
@@ -187,11 +208,24 @@ static void guard_task(void *arg)
             memcmp(ap.bssid, bssid, 6) != 0 ||
             esp_netif_get_ip_info(sta, &info) != ESP_OK || info.gw.addr != gateway.addr) {
             vTaskDelay(pdMS_TO_TICKS(1000));
+            garp_due(&garp, false, false, esp_timer_get_time());
             continue;
         }
         ESP_LOGI(TAG, "[ARP_PROBE] target=" IPSTR " result=%s sent=%lu received=%lu repair=%lu",
                  IP2STR(&gateway), start != ESP_OK ? "error" : probe.replied ? "ok" : "timeout",
                  (unsigned long)sent, (unsigned long)received, (unsigned long)repairs);
+        if (garp_due(&garp, ARP_GUARD_ENABLE && locked && start == ESP_OK &&
+                     dispatched == ERR_OK && op.result == ERR_OK && op.found &&
+                     memcmp(op.observed, trusted, 6) == 0,
+                     !probe.replied, esp_timer_get_time())) {
+            arp_operation_t announce = {.gateway = gateway, .local_ip = {.addr = info.ip.addr},
+                                        .gratuitous = true};
+            memcpy(announce.bssid, bssid, 6);
+            err_t dispatched_garp = tcpip_callback_wait(arp_access, &announce);
+            err_t result = dispatched_garp != ERR_OK ? dispatched_garp : announce.result;
+            ESP_LOGW(TAG, "[ARP_GARP] action=%s count=%u budget=12 err=%d",
+                     result == ERR_OK ? "sent" : "error", garp.attempts, (int)result);
+        }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

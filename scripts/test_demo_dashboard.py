@@ -224,6 +224,38 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(p['communication'], 'unknown')
         self.assertGreater(len(p['actions']), 0)
 
+    def test_garp_send_needs_new_replies_and_is_not_itself_recovery(self):
+        self.s.ingest('[ARP_GUARD] mode=on action=locked repairs=1 err=0')
+        for seq in (1, 2):
+            self.s.ingest(f'[ARP_PROBE] target=192.168.0.1 result=timeout sent={seq} received=0 repair=1')
+        self.s.ingest('[ARP_GARP] action=sent count=1 budget=12 err=0')
+        self.assertEqual(self.s.snapshot()['protection']['communication'], 'checking')
+        for seq in (3, 4):
+            self.s.ingest(f'[ARP_PROBE] target=192.168.0.1 result=ok sent={seq} received={seq-2} repair=1')
+            self.assertEqual(self.s.snapshot()['protection']['communication'], 'checking')
+        self.s.ingest('[ARP_PROBE] target=192.168.0.1 result=ok sent=5 received=3 repair=1')
+        p = self.s.snapshot()['protection']
+        self.assertEqual(p['communication'], 'recovered')
+        self.assertEqual(p['garp']['count'], 1)
+        self.assertEqual(p['actions'][0]['action'], 'garp_sent')
+
+    def test_wireless_configuration_is_freshness_bound_and_cleared_on_reset(self):
+        self.s.ingest('[WIFI_DEFENSE] binding=on pmf=optional bssid=68:02:B8:BB:AF:57 garp=12 budget=12')
+        p = self.s.snapshot()['protection']
+        self.assertTrue(p['wireless_fresh'])
+        self.assertEqual(p['wireless']['pmf'], 'optional')
+        self.assertEqual(p['garp']['count'], 12)
+        self.now += 6
+        self.assertFalse(self.s.snapshot()['protection']['wireless_fresh'])
+        self.s.ingest('rst:0x1 (POWERON_RESET)')
+        self.assertEqual(self.s.snapshot()['protection']['garp']['count'], 0)
+
+    def test_garp_error_never_confirms_recovery(self):
+        self.s.ingest('[ARP_GUARD] mode=on action=locked repairs=1 err=0')
+        self.s.ingest('[ARP_GARP] action=error count=12 budget=12 err=-4')
+        self.assertNotEqual(self.s.snapshot()['protection']['communication'], 'recovered')
+        self.assertEqual(self.s.snapshot()['protection']['actions'][0]['action'], 'garp_error')
+
     def test_disabled_or_failed_guard_cannot_claim_defense_recovery(self):
         self.s.ingest('[ARP_GUARD] mode=off action=detected repairs=0 err=0')
         for seq in (1,2):

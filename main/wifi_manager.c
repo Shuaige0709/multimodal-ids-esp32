@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "app_config.h"
+#include "arp_guard_config.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -185,6 +186,23 @@ void wifi_manager_start(void)
         },
     };
 
+    wifi_config.sta.pmf_cfg.required = WIFI_PMF_REQUIRED;
+    if (WIFI_TRUSTED_AP_ENABLE) {
+        unsigned b[6];
+        int n = 0;
+        const char *text = ARP_GUARD_BSSID;
+        bool valid = sscanf(text, "%2x:%2x:%2x:%2x:%2x:%2x%n",
+                            &b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &n) == 6 &&
+                     n == 17 && text[n] == '\0';
+        unsigned any = 0;
+        if (valid) for (int i = 0; i < 6; i++) any |= b[i];
+        if (!valid || !any || (b[0] & 1)) {
+            ESP_LOGE(TAG, "Invalid trusted AP profile; refusing an unbound connection");
+            ESP_ERROR_CHECK(ESP_ERR_INVALID_ARG);
+        }
+        for (int i = 0; i < 6; i++) wifi_config.sta.bssid[i] = (uint8_t)b[i];
+        wifi_config.sta.bssid_set = true;
+    }
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());

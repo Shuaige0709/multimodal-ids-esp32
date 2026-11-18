@@ -52,9 +52,25 @@ class ProtectionState:
         self.last_sent = None
         self.comm = 'unknown'
         self.sent = self.received = 0
+        self.garp = {'action': 'unknown', 'count': 0, 'budget': 12}
+        self.wireless = {'binding': 'unknown', 'pmf': 'unknown', 'bssid': None}
+        self.wireless_at = None
 
     def ingest(self, line, now, stamp):
         fields = dict(re.findall(r'(\w+)=([A-Za-z0-9:._+\-]+)', line))
+        if '[WIFI_DEFENSE]' in line:
+            self.wireless = {k: fields.get(k, 'unknown') for k in ('binding', 'pmf', 'bssid')}
+            self.wireless_at = now
+            self.garp['count'] = number(fields, 'garp')
+            self.garp['budget'] = number(fields, 'budget')
+        if '[ARP_GARP]' in line:
+            self.garp = {'action': fields.get('action', 'unknown'),
+                         'count': number(fields, 'count'), 'budget': number(fields, 'budget')}
+            self.actions.appendleft({'action': 'garp_' + self.garp['action'],
+                                     'mode': self.guard['mode'], 'time': stamp})
+            # Sending a broadcast is not evidence that the peer accepted it.
+            self.successes = self.failures = 0
+            self.comm = 'checking'
         if '[ARP_GUARD]' in line:
             current = {'mode': fields.get('mode', 'unknown'),
                        'action': fields.get('action', 'unknown'),
@@ -103,12 +119,16 @@ class ProtectionState:
                 'communication': comm,
                 'sent': self.sent, 'received': self.received,
                 'actions': list(self.actions),
+                'garp': dict(self.garp), 'wireless': dict(self.wireless),
+                'wireless_fresh': serial_fresh and self.wireless_at is not None
+                                  and now - self.wireless_at < 5,
                 'success_streak': self.successes if probe_fresh else 0}
 
 
 class DashboardState:
-    def __init__(self, clock=time.monotonic):
+    def __init__(self, clock=time.monotonic, wall_clock=datetime.now):
         self.clock = clock
+        self.wall_clock = wall_clock
         self.lock = threading.Lock()
         self.serial = False
         self.error = None
@@ -123,7 +143,7 @@ class DashboardState:
         self.active = {}
         self.current_types = []
         self.previous_uptime = None
-        self.started = datetime.now().isoformat(timespec='seconds')
+        self.started = self.wall_clock().isoformat(timespec='seconds')
         self.last_link = None
         self.link_phase = 'unknown'
         self.outages = deque(maxlen=100)
@@ -190,7 +210,7 @@ class DashboardState:
 
     def transport(self, connected, error=None):
         with self.lock:
-            self._interrupt_link(self.clock(), datetime.now().isoformat(timespec='seconds'))
+            self._interrupt_link(self.clock(), self.wall_clock().isoformat(timespec='seconds'))
             self.serial = connected
             self.error = str(error) if error else None
             self.active.clear()
@@ -202,7 +222,7 @@ class DashboardState:
 
     def ingest(self, line, row=None):
         now = self.clock()
-        stamp = datetime.now().isoformat(timespec='seconds')
+        stamp = self.wall_clock().isoformat(timespec='seconds')
         with self.lock:
             self.last_line = now
             if 'rst:0x' in line or 'ESP-ROM:' in line:
@@ -290,6 +310,18 @@ class DashboardState:
                     'types': active, 'latest': dict(self.latest), 'events': events,
                     'protection': self.protection.snapshot(now, fresh),
                     'total': self.sequence, 'error': self.error, 'started': self.started}
+
+
+def save_dashboard_snapshot(state, path, metadata=None):
+    """Atomically save an observation snapshot without mutating the live state."""
+    snapshot = state.snapshot()
+    snapshot['export'] = {'saved_at': datetime.now().isoformat(timespec='seconds'),
+                          **(metadata or {})}
+    target = Path(path)
+    temporary = target.with_name(target.name + '.tmp')
+    temporary.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(target)
+    return snapshot
 
 
 def start_dashboard(state, host='0.0.0.0', port=8080):

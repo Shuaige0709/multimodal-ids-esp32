@@ -421,6 +421,17 @@ def main():
         except KeyboardInterrupt:
             print("Stopped")
         finally:
+            if dashboard:
+                from scripts.demo_dashboard import save_dashboard_snapshot
+                snapshot_path = f"{args.out}.dashboard.json"
+                try:
+                    save_dashboard_snapshot(dashboard, snapshot_path, {
+                        'recording_ended': True, 'reason': 'collector_exit',
+                        'csv': os.path.abspath(args.out), 'raw_log': os.path.abspath(raw_log_path),
+                    })
+                    print(f"Dashboard snapshot saved: {snapshot_path}")
+                except OSError as e:
+                    print(f"Could not save dashboard snapshot: {e}; CSV and raw log remain available", file=sys.stderr)
             try:
                 ser.close()
             except Exception:

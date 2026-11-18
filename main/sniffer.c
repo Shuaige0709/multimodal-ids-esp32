@@ -166,7 +166,7 @@ void sniffer_start(void)
         }
     }
 
-    uint8_t channel = 11;
-    ESP_LOGI(TAG, "SET ESP32 at channel %d to collect dataset", channel);
-    esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+    /* Associated station owns the radio channel, including after reconnect.
+     * Do not retune it to a historical collection channel. */
+    ESP_LOGI(TAG, "Monitoring associated AP channel; no fixed-channel retune");
 }
