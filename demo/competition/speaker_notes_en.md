@@ -2,9 +2,9 @@
 
 Timing assumes five minutes for presentation and live demonstration, followed by two minutes of questions. The PDF contains exactly five slides. The following timing includes time to switch windows and wait for real device behavior; it is a target, not a guaranteed attack or recovery duration.
 
-## Slide 1 — Swallow Watch | 0:00–0:30
+## Slide 1 — Project title | 0:00–0:30
 
-“Good afternoon. We present Swallow Watch, a lightweight intrusion detection system running on an ESP32.
+“Good afternoon. Our project is a lightweight multimodal intrusion detection system running on an ESP32.
 
 Our goal is to show three things: whether an attack is detected, whether the device is affected, and whether a useful response is possible. These are different outcomes, and our system makes each of them visible.”
 

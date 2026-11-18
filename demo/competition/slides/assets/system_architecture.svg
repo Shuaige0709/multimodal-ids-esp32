@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="430" viewBox="0 0 2000 430">
+<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M1 1 L11 6 L1 11 Z" fill="context-stroke"/></marker></defs>
+<rect width="2000" height="430" fill="#FFFFFF"/>
+<rect x="18" y="18" width="320" height="394" rx="20" fill="#F7FAFC" stroke="#CFDFE7" stroke-width="2"/>
+<rect x="366" y="18" width="1246" height="394" rx="20" fill="#F5F9FC" stroke="#CFDFE7" stroke-width="2"/>
+<rect x="1640" y="18" width="342" height="394" rx="20" fill="#F7FAFC" stroke="#CFDFE7" stroke-width="2"/>
+<text x="42" y="57" fill="#2878A7" font-family="Arial,sans-serif" font-size="25" font-weight="700" text-anchor="start">TEST SETTING</text>
+<text x="399" y="57" fill="#2878A7" font-family="Arial,sans-serif" font-size="25" font-weight="700" text-anchor="start">ESP32 STATION + DETECTOR</text>
+<text x="1667" y="57" fill="#2878A7" font-family="Arial,sans-serif" font-size="25" font-weight="700" text-anchor="start">ON-BOARD OUTPUT</text>
+<rect x="103" y="99" width="132" height="87" rx="8" fill="#FFFFFF" stroke="#2878A7" stroke-width="5"/>
+<rect x="113" y="109" width="112" height="65" rx="3" fill="#EAF4F8" stroke="none" stroke-width="0"/>
+<text x="125" y="152" fill="#2878A7" font-family="Arial,sans-serif" font-size="33" font-weight="700" text-anchor="start">&gt;_</text>
+<line x1="91" y1="196" x2="247" y2="196" stroke="#2878A7" stroke-width="7" stroke-linecap="round"/>
+<line x1="111" y1="187" x2="91" y2="196" stroke="#2878A7" stroke-width="5" stroke-linecap="round"/>
+<line x1="227" y1="187" x2="247" y2="196" stroke="#2878A7" stroke-width="5" stroke-linecap="round"/>
+<text x="169" y="245" fill="#17324A" font-family="Arial,sans-serif" font-size="22" font-weight="700" text-anchor="middle">Nearby attack traffic</text>
+<text x="169" y="280" fill="#536574" font-family="Arial,sans-serif" font-size="20" font-weight="400" text-anchor="middle">Fixed 2.4-GHz AP</text>
+<text x="169" y="315" fill="#536574" font-family="Arial,sans-serif" font-size="17" font-weight="400" text-anchor="middle">One channel observed</text>
+<line x1="337" y1="219" x2="386" y2="219" stroke="#2878A7" stroke-width="4" stroke-linecap="round"/>
+<rect x="395" y="78" width="1186" height="322" rx="16" fill="#FFFFFF" stroke="#8BAEC1" stroke-width="3"/>
+<rect x="418" y="89" width="104" height="94" rx="9" fill="#17324A" stroke="#17324A" stroke-width="2"/>
+<rect x="437" y="106" width="66" height="58" rx="5" fill="#2E8096" stroke="#FFFFFF" stroke-width="2"/>
+<text x="470" y="143" fill="#FFFFFF" font-family="Arial,sans-serif" font-size="15" font-weight="700" text-anchor="middle">ESP32</text>
+<line x1="408" y1="106" x2="418" y2="106" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="522" y1="106" x2="532" y2="106" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="408" y1="121" x2="418" y2="121" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="522" y1="121" x2="532" y2="121" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="408" y1="136" x2="418" y2="136" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="522" y1="136" x2="532" y2="136" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="408" y1="151" x2="418" y2="151" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="522" y1="151" x2="532" y2="151" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="408" y1="166" x2="418" y2="166" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<line x1="522" y1="166" x2="532" y2="166" stroke="#17324A" stroke-width="4" stroke-linecap="round"/>
+<text x="554" y="136" fill="#17324A" font-family="Arial,sans-serif" font-size="29" font-weight="700" text-anchor="start">Local capture and decision</text>
+<text x="554" y="165" fill="#536574" font-family="Arial,sans-serif" font-size="19" font-weight="400" text-anchor="start">Wi-Fi frames and ESP32 network state</text>
+<rect x="418" y="195" width="1139" height="45" rx="9" fill="#EAF4FF" stroke="#8DB8D2" stroke-width="1.5"/>
+<text x="440" y="225" fill="#17324A" font-family="Arial,sans-serif" font-size="21" font-weight="400" text-anchor="start">802.11 frames / 100 ms</text>
+<line x1="830" y1="218" x2="895" y2="218" stroke="#2878A7" stroke-width="3" stroke-linecap="round"/>
+<text x="917" y="225" fill="#17324A" font-family="Arial,sans-serif" font-size="21" font-weight="700" text-anchor="start">Tree + repeated attack evidence</text>
+<line x1="1557" y1="218" x2="1640" y2="218" stroke="#2878A7" stroke-width="3" stroke-linecap="round"/>
+<rect x="418" y="246" width="1139" height="45" rx="9" fill="#EAF4FF" stroke="#8DB8D2" stroke-width="1.5"/>
+<text x="440" y="276" fill="#17324A" font-family="Arial,sans-serif" font-size="21" font-weight="400" text-anchor="start">Beacon-frame counts</text>
+<line x1="830" y1="269" x2="895" y2="269" stroke="#2878A7" stroke-width="3" stroke-linecap="round"/>
+<text x="917" y="276" fill="#17324A" font-family="Arial,sans-serif" font-size="21" font-weight="700" text-anchor="start">Independent burst rule</text>
+<line x1="1557" y1="269" x2="1640" y2="269" stroke="#2878A7" stroke-width="3" stroke-linecap="round"/>
+<rect x="418" y="297" width="1139" height="45" rx="9" fill="#E8F7F0" stroke="#83B9A4" stroke-width="1.5"/>
+<text x="440" y="327" fill="#17324A" font-family="Arial,sans-serif" font-size="21" font-weight="400" text-anchor="start">Gateway-MAC cache</text>
+<line x1="830" y1="320" x2="895" y2="320" stroke="#2B8A72" stroke-width="3" stroke-linecap="round"/>
+<text x="917" y="327" fill="#17324A" font-family="Arial,sans-serif" font-size="21" font-weight="700" text-anchor="start">Independent change event</text>
+<line x1="1557" y1="320" x2="1640" y2="320" stroke="#2B8A72" stroke-width="3" stroke-linecap="round"/>
+<rect x="418" y="348" width="1139" height="45" rx="9" fill="#EFF3F4" stroke="#CFDFE7" stroke-width="1.5"/>
+<text x="440" y="378" fill="#536574" font-family="Arial,sans-serif" font-size="21" font-weight="400" text-anchor="start">Wi-Fi reconnect / log delivery</text>
+<line x1="830" y1="371" x2="895" y2="371" stroke="#536574" stroke-width="3" stroke-linecap="round"/>
+<text x="917" y="378" fill="#536574" font-family="Arial,sans-serif" font-size="21" font-weight="400" text-anchor="start">Impact / record quality; no alarm vote</text>
+<rect x="1665" y="91" width="293" height="283" rx="16" fill="#EAF4FF" stroke="#76AAC7" stroke-width="3"/>
+<circle cx="1812" cy="150" r="25" fill="#DFF1E9" stroke="#2B8A72" stroke-width="3"/>
+<text x="1812" y="159" fill="#2B8A72" font-family="Arial,sans-serif" font-size="30" font-weight="700" text-anchor="middle">!</text>
+<text x="1812" y="223" fill="#17324A" font-family="Arial,sans-serif" font-size="25" font-weight="700" text-anchor="middle">LOCAL ALARM</text>
+<text x="1812" y="252" fill="#536574" font-family="Arial,sans-serif" font-size="18" font-weight="400" text-anchor="middle">OLED when enabled</text>
+<line x1="1690" y1="274" x2="1934" y2="274" stroke="#B3CFE0" stroke-width="2" stroke-linecap="round"/>
+<text x="1812" y="316" fill="#17324A" font-family="Arial,sans-serif" font-size="23" font-weight="700" text-anchor="middle">UART / UDP logs</text>
+<text x="1812" y="343" fill="#536574" font-family="Arial,sans-serif" font-size="17" font-weight="400" text-anchor="middle">Windows + alarm status</text>
+
+<polygon points="386.0,219.0 375.0,213.0 375.0,225.0" fill="#2878A7"/>
+<polygon points="895.0,218.0 884.0,212.0 884.0,224.0" fill="#2878A7"/>
+<polygon points="1640.0,218.0 1629.0,212.0 1629.0,224.0" fill="#2878A7"/>
+<polygon points="895.0,269.0 884.0,263.0 884.0,275.0" fill="#2878A7"/>
+<polygon points="1640.0,269.0 1629.0,263.0 1629.0,275.0" fill="#2878A7"/>
+<polygon points="895.0,320.0 884.0,314.0 884.0,326.0" fill="#2B8A72"/>
+<polygon points="1640.0,320.0 1629.0,314.0 1629.0,326.0" fill="#2B8A72"/>
+<polygon points="895.0,371.0 884.0,365.0 884.0,377.0" fill="#536574"/>
+</svg>

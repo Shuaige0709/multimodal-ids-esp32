@@ -3,7 +3,7 @@
 ## 檔案入口
 
 - [五張簡報 PDF](slides/competition_demo.pdf)：16:9、白底、簡約英文，沿用海報／報告架構圖與結果圖。
-- [LaTeX 原始檔](slides/competition_demo.tex) 與 [重編譯腳本](slides/build.ps1)。需要 Windows Segoe UI 與 XeLaTeX；原圖副本已包含於 assets。
+- [Marp Markdown 原始檔](slides/competition_demo.md)、[HTML 簡報](slides/competition_demo.html) 與 [重編譯腳本](slides/build.ps1)。沿用 1104.md 的白底、深藍標題與深灰內文風格；本機 Marp 版本已鎖定，需要 Node.js 與 Chrome／Edge。原圖副本已包含於 assets。
 - [英文講稿與兩分鐘問答](speaker_notes_en.md)：包含切換網頁的時機及現場未成功時的說法。
 - [固定網路設定](network.json)：Windows 和 Kali 共同讀取，不需每次 export IP／MAC。
 - 已完成的 [防護驗收結果](../../docs/demo_acceptance_results_20261118.md)。
