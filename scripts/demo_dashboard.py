@@ -56,9 +56,13 @@ class ProtectionState:
         self.garp = {'action': 'unknown', 'count': 0, 'budget': 12}
         self.wireless = {'binding': 'unknown', 'pmf': 'unknown', 'bssid': None}
         self.wireless_at = None
+        self.repair_events = self.rearm_events = 0
+        self.pending_mismatch = self.pending_rearm = False
 
     def ingest(self, line, now, stamp):
         fields = dict(re.findall(r'(\w+)=([A-Za-z0-9:._+\-]+)', line))
+        if '[ARP_GUARD_EVENT]' in line and fields.get('mismatch') == '1':
+            self.pending_mismatch = True
         if '[WIFI_DEFENSE]' in line:
             self.wireless = {k: fields.get(k, 'unknown') for k in ('binding', 'pmf', 'bssid')}
             self.wireless_at = now
@@ -77,11 +81,22 @@ class ProtectionState:
                        'action': fields.get('action', 'unknown'),
                        'repairs': number(fields, 'repairs'), 'err': number(fields, 'err'),
                        'device_ip': fields.get('ip')}
+            kind = current['action']
+            if current['action'] == 'waiting' and self.guard['action'] == 'locked':
+                self.pending_rearm = True
+            if current['action'] == 'locked' and current['repairs'] > self.guard['repairs']:
+                if self.pending_mismatch:
+                    self.repair_events += 1
+                    kind = 'repair'
+                elif self.pending_rearm:
+                    self.rearm_events += 1
+                    kind = 'rearm'
+                self.pending_mismatch = self.pending_rearm = False
             if current['repairs'] != self.guard['repairs'] or current['mode'] != self.guard['mode']:
                 self.successes = self.failures = 0
                 self.comm = 'checking'
             if current != self.guard:
-                self.actions.appendleft({**current, 'time': stamp})
+                self.actions.appendleft({**current, 'kind': kind, 'time': stamp})
             self.guard, self.guard_at = current, now
         if '[ARP_PROBE]' in line:
             sent, received = number(fields, 'sent'), number(fields, 'received')
@@ -117,6 +132,7 @@ class ProtectionState:
         if comm == 'recovered' and (self.guard['action'] != 'locked' or self.guard['err']):
             comm = 'reachable'
         return {**self.guard, 'fresh': guard_fresh, 'target': self.target,
+                'repair_events': self.repair_events, 'rearm_events': self.rearm_events,
                 'communication': comm,
                 'sent': self.sent, 'received': self.received,
                 'actions': list(self.actions),
@@ -124,6 +140,38 @@ class ProtectionState:
                 'wireless_fresh': serial_fresh and self.wireless_at is not None
                                   and now - self.wireless_at < 5,
                 'success_streak': self.successes if probe_fresh else 0}
+
+
+def display_events(events, outages, stamp):
+    """Group correlated RF records for presentation; preserve raw events intact.
+
+    A continuous measured outage plus a Deauth observation is required. ARP,
+    Beacon and Twin records are never absorbed. No attack labels are consulted.
+    """
+    result = [dict(e) for e in events]
+    for outage in outages:
+        if outage['outcome'] == 'interrupted':
+            continue
+        left = datetime.fromisoformat(outage['start']).timestamp() - 2
+        right = datetime.fromisoformat(outage['end'] or stamp).timestamp()
+        members = [e for e in result
+                   if e['type'] in ('Deauth / Disassoc', 'Probe Flood', '無線異常')
+                   and left <= datetime.fromisoformat(e['start']).timestamp()
+                   and datetime.fromisoformat(e['last']).timestamp() <= right]
+        if not any(e['type'] == 'Deauth / Disassoc' for e in members):
+            continue
+        first = min(members, key=lambda e: e['start'])
+        last = max(members, key=lambda e: e['last'])
+        grouped = {**first, 'type': 'Deauth / Disassoc', 'last': last['last'],
+                   'duration': round((datetime.fromisoformat(last['last']) -
+                                      datetime.fromisoformat(first['start'])).total_seconds(), 1),
+                   'windows': sum(e['windows'] for e in members),
+                   'active': any(e['active'] for e in members),
+                   'source_ids': [e['id'] for e in members],
+                   'observed_types': sorted({e['type'] for e in members}),
+                   'outage_id': outage['id']}
+        result = [e for e in result if e not in members] + [grouped]
+    return sorted(result, key=lambda e: e['start'], reverse=True)
 
 
 class DashboardState:
@@ -309,6 +357,7 @@ class DashboardState:
                     'connection': {'phase': connection_phase, 'outages': outages,
                                    'total': self.outage_sequence, 'fresh': link_fresh},
                     'types': active, 'latest': dict(self.latest), 'events': events,
+                    'display_events': display_events(events, outages, self.wall_clock().isoformat()),
                     'protection': self.protection.snapshot(now, fresh),
                     'total': self.sequence, 'error': self.error, 'started': self.started}
 

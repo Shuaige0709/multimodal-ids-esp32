@@ -3,10 +3,50 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
-from scripts.demo_dashboard import DashboardState, alarm_types, start_dashboard
+from scripts.demo_dashboard import DashboardState, alarm_types, start_dashboard, display_events
 
 
 class DashboardTests(unittest.TestCase):
+    def test_repair_and_reconnect_rearm_are_separate(self):
+        self.s.ingest('[ARP_GUARD] mode=on action=watch repairs=0 err=0')
+        self.s.ingest('[ARP_GUARD_EVENT] mismatch=1 observed=AA:BB:CC:DD:EE:FF')
+        self.s.ingest('[ARP_GUARD] mode=on action=locked repairs=1 err=0')
+        self.s.ingest('[ARP_GUARD] mode=on action=locked repairs=1 err=0')
+        self.s.ingest('[ARP_GUARD] mode=on action=waiting repairs=1 err=0')
+        self.s.ingest('[ARP_GUARD] mode=on action=locked repairs=2 err=0')
+        p = self.s.snapshot()['protection']
+        self.assertEqual((p['repair_events'], p['rearm_events'], p['repairs']), (1, 1, 2))
+        self.assertEqual(p['actions'][0]['kind'], 'rearm')
+        self.assertEqual(p['actions'][2]['kind'], 'repair')
+
+    def test_attaching_to_an_existing_lock_does_not_invent_repaired_attacks(self):
+        self.s.ingest('[ARP_GUARD] mode=on action=locked repairs=5 err=0')
+        p = self.s.snapshot()['protection']
+        self.assertEqual((p['repair_events'], p['rearm_events']), (0, 0))
+        self.assertEqual(p['actions'][0]['kind'], 'locked')
+
+    def test_deauth_wave_groups_history_without_erasing_raw_or_other_attacks(self):
+        def event(i, kind, second):
+            return {'id': i, 'type': kind, 'start': f'2026-11-18T19:34:{second:02}',
+                    'last': f'2026-11-18T19:34:{second+1:02}', 'duration': 1,
+                    'windows': 2, 'wifi': 'down', 'active': False}
+        events = [event(1, 'Deauth / Disassoc', 49), event(2, 'Probe Flood', 50),
+                  event(3, '無線異常', 52), event(4, 'Deauth / Disassoc', 56),
+                  event(5, 'ARP 身分異常', 54), event(6, 'Evil Twin', 54),
+                  event(7, 'Beacon Flood', 54), event(8, 'Probe Flood', 20)]
+        original = json.dumps(events)
+        outages = [{'id': 1, 'start': '2026-11-18T19:34:48',
+                    'end': '2026-11-18T19:35:10', 'outcome': 'recovered'}]
+        grouped = display_events(events, outages, '2026-11-18T19:35:20')
+        self.assertEqual(len(grouped), 5)
+        deauth = next(e for e in grouped if e['type'] == 'Deauth / Disassoc')
+        self.assertEqual(deauth['source_ids'], [1, 2, 3, 4])
+        self.assertEqual(json.dumps(events), original)
+        self.assertEqual(display_events(events, [], '2026-11-18T19:35:20'),
+                         sorted(events, key=lambda e: e['start'], reverse=True))
+        probe_only = events[1:3]
+        self.assertEqual(len(display_events(probe_only, outages, '2026-11-18T19:35:20')), 2)
+
     def test_second_server_cannot_share_a_live_dashboard_port(self):
         server = start_dashboard(DashboardState(), '127.0.0.1', 0)
         second = None

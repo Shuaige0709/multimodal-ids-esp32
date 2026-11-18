@@ -43,6 +43,9 @@ const COPY = {
   guardNetwork:['等待指定的 Wi-Fi 網路','Waiting for the configured Wi-Fi'],guardGarp:['已送出修復通知','Repair announcement sent'],guardGarpError:['修復通知未送出','Repair announcement failed'],
   guardPartial:['防護已啟動，通訊仍受影響','Protection active, communication affected'],
   guardLockedDetail:['避免裝置將資料送往冒充的路由器。','Keeps the device from sending data to an impersonated router.'],
+  guardCounts:['ARP 異常修復 {repairs} 次 · 重連後恢復防護 {rearms} 次','ARP anomaly repairs: {repairs} · Protection restored after reconnect: {rearms}'],
+  guardRepair:['已修復 ARP 異常並鎖定路由器','ARP anomaly repaired; trusted router locked'],
+  guardRearm:['重連後已恢復防護','Protection restored after reconnect'],
   guardOffDetail:['只偵測異常，不自動更正連線設定。','Detects anomalies without automatically correcting connection settings.'],
   guardWatchDetail:['比對事先確認的路由器身分。','Checks the router against the trusted configuration.'],guardNoData:['尚未收到最新防護狀態。','Waiting for a recent protection update.'],
   guardPartialDetail:['已保護本機設定；路由器端的回程仍可能受影響。','Local settings are protected; the return path may still be affected.'],
@@ -112,7 +115,7 @@ function connection(d,p) {
   if(last&&up){$('lastRecovery').replaceChildren(node('strong','body-2',tr('lastRecovery',{duration:seconds(last.duration)})),node('span','caption-2',tr('recoveryAt',{time:clock(last.end)})));}
   entries('outages',c.outages,'outage');text('outageCount',tr('count',{n:c.total}));return phase;
 }
-const ACTION_KEYS={locked:'guardLocked',watch:'guardWatching',detected:'guardDetected',error:'guardError',invalid:'guardInvalid',waiting:'guardNetwork',garp_sent:'guardGarp',garp_error:'guardGarpError'};
+const ACTION_KEYS={locked:'guardLocked',repair:'guardRepair',rearm:'guardRearm',watch:'guardWatching',detected:'guardDetected',error:'guardError',invalid:'guardInvalid',waiting:'guardNetwork',garp_sent:'guardGarp',garp_error:'guardGarpError'};
 function protection(p) {
   text('guardMode',!p.fresh?tr('waiting'):tr(p.mode==='on'?'guardOn':p.mode==='off'?'guardOff':'unconfirmed'));
   const affected=p.fresh&&p.mode==='on'&&p.action==='locked'&&p.communication==='failed';
@@ -120,7 +123,9 @@ function protection(p) {
   text('guardDetail',tr(!p.fresh?'guardNoData':p.mode==='off'?'guardOffDetail':affected?'guardPartialDetail':p.action==='locked'?'guardLockedDetail':'guardWatchDetail'));
   text('probeStatus',commLabel(p.communication));$('probeStatus').className='heading-6 '+(['reachable','recovered'].includes(p.communication)?'probe-good':p.communication==='failed'?'probe-bad':'');
   text('probeDetail',tr('checkDetail'));
-  const history=document.createDocumentFragment();for(const e of(p.actions||[]).slice(0,3)){const r=node('div','');r.append(node('span','',clock(e.time)),node('span','',(e.mode==='off'?tr('offPrefix'):'')+tr(ACTION_KEYS[e.action]||'unconfirmed')));history.append(r);}$('guardHistory').replaceChildren(history);
+  const history=document.createDocumentFragment();
+  if(p.fresh&&p.mode==='on')history.append(node('p','body-3',tr('guardCounts',{repairs:p.repair_events||0,rearms:p.rearm_events||0})));
+  for(const e of(p.actions||[]).slice(0,3)){const r=node('div','');r.append(node('span','',clock(e.time)),node('span','',(e.mode==='off'?tr('offPrefix'):'')+tr(ACTION_KEYS[e.kind||e.action]||'unconfirmed')));history.append(r);}$('guardHistory').replaceChildren(history);
   text('deviceIp',p.device_ip||'—');text('probeCounts',p.target?p.received+' / '+p.sent+' · '+p.target:'—');text('garpCount',(p.garp?.count||0)+' / '+(p.garp?.budget||12));
   text('wirelessDefense',!p.wireless_fresh?tr('unconfirmed'):tr(p.wireless?.binding==='on'?'bound':'unbound'));
   text('pmfPolicy',!p.wireless_fresh?tr('unconfirmed'):tr(p.wireless?.pmf==='required'?'pmfRequired':'pmfOptional'));
@@ -143,7 +148,7 @@ function render(d) {
   window.dispatchEvent(new CustomEvent('swallow:state',{detail:{tone,paused:['offline','stale','waiting'].includes(d.state)||(recorded&&d.presentation.finished)}}));
   const fresh=d.serial&&d.age!==null&&d.age<5;$('live').className='live caption-1'+(fresh&&!recorded?' ok':'');text('liveText',tr(recorded?'recorded':fresh?'live':'waiting'));
   text('attack',d.types.length?d.types.map(attackName).join(' · '):tr(d.state==='monitoring'?'noAlert':'waiting'));
-  const shown=visibleAlerts(d.events);entries('events',shown,'alert');text('alertCount',tr('count',{n:shown.length}));
+  const shown=visibleAlerts(d.display_events||d.events);entries('events',shown,'alert');text('alertCount',tr('count',{n:shown.length}));
   text('uart',tr(!d.serial?'disconnected':fresh?'usbReceiving':'usbWaiting'));
   text('session',tr('session',{time:clock(d.started)}));text('updated',tr('updated',{time:new Date().toLocaleTimeString(language==='en'?'en-GB':'zh-TW',{hour12:false})}));
   $('playback').hidden=!recorded;text('playback',recorded?tr('playback',{file:d.presentation.source,time:clock(d.presentation.time)}):'');
