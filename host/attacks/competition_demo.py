@@ -75,7 +75,10 @@ def validate_live(d, c, require_unlocked=False, require_connected=True):
             f"gateway={p.get('target')}; configured ESP32={c['esp32_ip']}, "
             f"gateway={c['gateway_ip']}. Update the profile or DHCP reservation.")
     if w.get('bssid', '').lower() != c['ap_bssid'].lower() or str(d.get('latest', {}).get('channel')) != str(c['channel']):
-        raise ValueError('Live AP/channel differs from network.json')
+        raise ValueError(
+            f"Live AP/channel differs from the active profile: live AP={w.get('bssid')}, "
+            f"channel={d.get('latest', {}).get('channel')}; expected AP={c['ap_bssid']}, "
+            f"channel={c['channel']}")
     if d.get('latest', {}).get('host_mac', '').lower() != c['esp32_mac'].lower():
         raise ValueError('Live device MAC differs from network.json')
     if p.get('communication') not in ('reachable', 'recovered'):
@@ -112,6 +115,10 @@ def resolve_live_target(d, c, unlocked=False):
     if address.version != 4 or not address.is_private or address.is_unspecified or address.is_loopback:
         raise ValueError('Live ESP32 address must be a private, non-loopback IPv4 address')
     candidate['esp32_ip'] = str(address)
+    channel = str(d.get('latest', {}).get('channel', ''))
+    if not re.fullmatch(r'(?:[1-9]|1[0-3])', channel):
+        raise ValueError('Wait for a valid live 2.4 GHz channel (1..13)')
+    candidate['channel'] = int(channel)
     if candidate['esp32_ip'] == candidate['gateway_ip']:
         raise ValueError('Live ESP32 address cannot equal the gateway')
     validate_live(d, candidate, require_unlocked=unlocked)
@@ -127,7 +134,7 @@ def ready(c, unlocked=False, seconds=20, discover=False):
             if discover:
                 resolved = resolve_live_target(d, c, unlocked=unlocked)
                 c.update(resolved)
-                print('Live target verified:', c['esp32_ip'], 'MAC:', c['esp32_mac'])
+                print('Live target verified:', c['esp32_ip'], 'MAC:', c['esp32_mac'], 'channel:', c['channel'])
             else:
                 validate_live(d, c, require_unlocked=unlocked)
             return d

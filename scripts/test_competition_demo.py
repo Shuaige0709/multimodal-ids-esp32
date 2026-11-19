@@ -8,6 +8,22 @@ from host.attacks.competition_demo import ROOT, environment, load_profile, monit
 
 
 class CompetitionDemoTests(unittest.TestCase):
+    def test_verified_hotspot_channel_is_resolved_before_attack_environment(self):
+        self.d['latest']['channel'] = 6
+        resolved = resolve_live_target(self.d, self.c, unlocked=True)
+        self.assertEqual(resolved['channel'], 6)
+        self.assertEqual(environment(resolved)['NIDS_WIFI_CHANNEL'], '6')
+        self.assertEqual(self.c['channel'], 11)
+        self.d['protection']['wireless']['bssid'] = '00:11:22:33:44:55'
+        with self.assertRaises(ValueError):
+            resolve_live_target(self.d, self.c)
+
+    def test_live_channel_must_be_in_the_supported_band(self):
+        for value in (None, 0, 14, 44, 'bad'):
+            self.d['latest']['channel'] = value
+            with self.subTest(channel=value), self.assertRaises(ValueError):
+                resolve_live_target(self.d, self.c)
+
     def test_dhcp_resolution_uses_verified_live_address_without_changing_profile(self):
         self.d['protection']['device_ip'] = '192.168.0.88'
         resolved = resolve_live_target(self.d, self.c, unlocked=True)
