@@ -308,10 +308,10 @@ void oled_clear(void)
     }
 }
 
-void oled_show_status(const oled_status_t *status)
+bool oled_show_status(const oled_status_t *status)
 {
     if (!oled_ready || status == NULL) {
-        return;
+        return false;
     }
 
     memset(fb, 0, sizeof(fb));
@@ -355,5 +355,5 @@ void oled_show_status(const oled_status_t *status)
         break;
     }
 
-    oled_flush();
+    return oled_flush();
 }

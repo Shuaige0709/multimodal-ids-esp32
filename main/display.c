@@ -13,7 +13,11 @@ static const char *TAG = "NIDS_INIT";
 
 #if NIDS_OLED_ENABLE
 static bool oled_init_attempted = false;
+static int64_t last_oled_init_attempt_ms = 0;
+static const int64_t OLED_INIT_RETRY_MS = 5000;
 static bool oled_inited = false;
+static bool oled_status_logged = false;
+static bool oled_logged_wifi_up = false;
 static int64_t last_oled_update_ms = 0;
 static const int64_t OLED_UPDATE_MIN_INTERVAL_MS = 1000;
 static const int64_t OLED_ALERT_HOLD_US = 8000000;
@@ -123,8 +127,11 @@ void display_tick(bool wifi_up, bool collector_ready, uint8_t channel,
                   uint32_t reconnects, uint32_t backlog, uint32_t uart_drops)
 {
 #if NIDS_OLED_ENABLE
-    if (!oled_init_attempted) {
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    if (!oled_inited && (!oled_init_attempted ||
+                        now_ms - last_oled_init_attempt_ms >= OLED_INIT_RETRY_MS)) {
         oled_init_attempted = true;
+        last_oled_init_attempt_ms = now_ms;
         ESP_LOGI(TAG, "Attempting OLED init...");
         oled_inited = oled_init();
         if (oled_inited) {
@@ -134,7 +141,6 @@ void display_tick(bool wifi_up, bool collector_ready, uint8_t channel,
     if (!oled_inited) {
         return;
     }
-    int64_t now_ms = esp_timer_get_time() / 1000;
     if ((now_ms - last_oled_update_ms) < OLED_UPDATE_MIN_INTERVAL_MS) {
         return;
     }
@@ -183,7 +189,18 @@ void display_tick(bool wifi_up, bool collector_ready, uint8_t channel,
     view.reconnects = reconnects;
     view.backlog = backlog;
     view.uart_drops = uart_drops;
-    oled_show_status(&view);
+    if (!oled_show_status(&view)) {
+        oled_deinit();
+        oled_inited = false;
+        oled_status_logged = false;
+        last_oled_init_attempt_ms = now_ms;
+        ESP_LOGW(TAG, "[OLED_STATUS] transfer failed; retry init in 5 seconds");
+    } else if (!oled_status_logged || oled_logged_wifi_up != wifi_up) {
+        ESP_LOGI(TAG, "[OLED_STATUS] wifi=%s state=%d refreshed=1",
+                 wifi_up ? "up" : "down", (int)view.state);
+        oled_status_logged = true;
+        oled_logged_wifi_up = wifi_up;
+    }
     last_oled_update_ms = now_ms;
 #else
     (void)wifi_up;

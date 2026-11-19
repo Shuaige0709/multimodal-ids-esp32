@@ -47,4 +47,4 @@ typedef struct {
 bool oled_init(void);
 void oled_deinit(void);
 void oled_clear(void);
-void oled_show_status(const oled_status_t *status);
+bool oled_show_status(const oled_status_t *status);
