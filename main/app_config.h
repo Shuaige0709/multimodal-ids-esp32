@@ -12,6 +12,13 @@
 #define CHANNEL_HOP_MODE 0
 #define DATASET_PROFILE 1
 
+/* Competition venue: demonstrate ARP + Deauth; the fixed Beacon threshold
+ * is not calibrated for this busy site. Keep capture/features unchanged.
+ * Restore to 1 for the original evaluated six-scenario alarm policy. */
+#ifndef NIDS_BEACON_ALERT_ENABLE
+#define NIDS_BEACON_ALERT_ENABLE 0
+#endif
+
 #define SYSLOG_MSG_MAX 864
 #define SYSLOG_BACKLOG_CAP 16
 

@@ -1,8 +1,17 @@
-# 五分鐘競賽：五張英文投影片＋真正的現場攻擊
+# 五分鐘競賽：五張英文簡報＋Q&A 頁＋真正的現場攻擊
+
+## 11/19 現場設定：正常監控、ARP、Deauth
+
+現場在未執行攻擊時也常見每 100 ms 約 5–9 個 Beacon，會觸發原先固定的「至少 6 個、3-of-5」規則。經確認 Kali 攻擊已停止，使用者選擇暫停這條獨立告警支線。
+
+- `main/app_config.h` 的 `NIDS_BEACON_ALERT_ENABLE=0`：只停用獨立 Beacon 告警；封包計數、決策樹及 RF／ARP 判定保留。OLED、UART、網頁採用相同的有效判定，不以網頁遮蔽代替修正。
+- 啟動時記錄 `[NIDS_POLICY] beacon_alert=disabled (capture retained)`。將此開關改回 `1` 並重新編譯，即恢復原本 Beacon 支線。
+- 這是縮小本次 demo 範圍，不是解決跨環境 Beacon 誤報，也不是原六情境受測韌體；簡報的六情境數據仍屬原先測試。
+- 已確認切換開關時所有 RF／ARP 來源組合維持不變。此設定仍需燒錄後核對正常畫面與 ARP／Deauth 現場行為。
 
 ## 檔案入口
 
-- [五張簡報 PDF](slides/competition_demo.pdf)：16:9、白底、簡約英文，沿用海報／報告架構圖與結果圖。
+- [簡報 PDF](slides/competition_demo.pdf)：五張主簡報＋第六張 Q&A，16:9、白底、簡約英文，沿用海報／報告架構圖與結果圖。
 - [Marp Markdown 原始檔](slides/competition_demo.md)、[HTML 簡報](slides/competition_demo.html) 與 [重編譯腳本](slides/build.ps1)。沿用 1104.md 的白底、深藍標題與深灰內文風格；本機 Marp 版本已鎖定，需要 Node.js 與 Chrome／Edge。原圖副本已包含於 assets。
 - [英文講稿與兩分鐘問答](speaker_notes_en.md)：包含切換網頁的時機及現場未成功時的說法。
 - [固定網路設定](network.json)：Windows 和 Kali 共同讀取，不需每次 export IP／MAC。

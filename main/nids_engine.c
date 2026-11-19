@@ -18,6 +18,7 @@
 #include "nids_calib.h"
 #include "nids_gw.h"
 #include "nids_m3.h"
+#include "nids_alert_policy.h"
 #include "nids_types.h"
 #include "sniffer.h"
 #include "syslog_client.h"
@@ -286,6 +287,7 @@ static void nids_analysis_task(void *arg)
             m3_input.reconnects = wifi_manager_reconnect_count();
             m3_input.gw_mac_valid = nids_gw_mac_copy(m3_input.gw_mac);
             nids_m3_result_t m3_result = nids_m3_step(&m3_state, &m3_input);
+            m3_result.sources = nids_alert_policy_apply(m3_result.sources);
             int pred = m3_result.raw_vote;
 #else
             int pred = nids_predict(&features);
@@ -504,6 +506,8 @@ static void nids_analysis_task(void *arg)
 
 void nids_engine_start(void)
 {
+    ESP_LOGI(TAG, "[NIDS_POLICY] beacon_alert=%s (capture retained)",
+             NIDS_BEACON_ALERT_ENABLE ? "enabled" : "disabled");
     BaseType_t created = xTaskCreate(nids_analysis_task, "nids_analysis_task", 6144, NULL, 5, NULL);
     ESP_ERROR_CHECK(created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
