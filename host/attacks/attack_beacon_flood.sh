@@ -44,16 +44,26 @@ ensure_label_path || exit 1
 BSSID="${NIDS_BSSID:-$(_json_field ap_bssid 2>/dev/null || true)}"
 CHANNEL="${NIDS_WIFI_CHANNEL:-$(_json_field channel 2>/dev/null || true)}"
 DURATION="${NIDS_BEACON_FLOOD_SEC:-45}"
+BEACON_SSID="${NIDS_BEACON_SSID:-NIDS-DEMO-BEACON}"
+
+[[ "$CHANNEL" =~ ^([1-9]|1[0-3])$ ]] || {
+  echo '>>> ERROR: set NIDS_WIFI_CHANNEL to the authorized 2.4 GHz demo AP channel (1..13)' >&2
+  exit 1
+}
 
 if [[ -n "${CHANNEL:-}" && "$CHANNEL" != "null" && "$CHANNEL" != "0" ]]; then
   iw dev "$MON_IFACE" set channel "$CHANNEL" 2>/dev/null \
-    || iwconfig "$MON_IFACE" channel "$CHANNEL" 2>/dev/null || true
+    || iwconfig "$MON_IFACE" channel "$CHANNEL" 2>/dev/null || {
+      echo '>>> ERROR: could not set demo channel; check monitor mode' >&2
+      exit 1
+    }
 fi
 
 echo ">>> Monitor iface    : $MON_IFACE"
 echo ">>> AP BSSID (opt)   : ${BSSID:-none}"
 echo ">>> Channel          : ${CHANNEL:-?}"
 echo ">>> Duration         : ${DURATION}s"
+echo ">>> Demo beacon SSID : ${BEACON_SSID}"
 echo ">>> Label host       : $(get_label_host):${LABEL_PORT}"
 echo ">>> READY FOR BEACON_FLOOD"
 
@@ -62,11 +72,9 @@ LABEL_SENT=1
 sleep 0.5
 
 set +e
-if [[ -n "${BSSID:-}" && "$BSSID" != "null" ]]; then
-  timeout "$DURATION" mdk4 "$MON_IFACE" b -a "$BSSID"
-else
-  timeout "$DURATION" mdk4 "$MON_IFACE" b -n "$SSID"
-fi
+# In mdk4 beacon mode, -a enables malformed SSIDs; it takes no BSSID.
+# Use a distinct demo SSID so this test does not also impersonate the real AP.
+timeout "$DURATION" mdk4 "$MON_IFACE" b -n "$BEACON_SSID" -c "$CHANNEL"
 rc=$?
 set -e
 echo ">>> mdk4 finished rc=${rc} (124=timeout/duration OK)"
