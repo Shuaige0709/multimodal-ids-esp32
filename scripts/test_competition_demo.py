@@ -9,11 +9,12 @@ from host.attacks.competition_demo import ROOT, environment, load_profile, monit
 
 class CompetitionDemoTests(unittest.TestCase):
     def test_verified_hotspot_channel_is_resolved_before_attack_environment(self):
+        original_channel = self.c['channel']
         self.d['latest']['channel'] = 6
         resolved = resolve_live_target(self.d, self.c, unlocked=True)
         self.assertEqual(resolved['channel'], 6)
         self.assertEqual(environment(resolved)['NIDS_WIFI_CHANNEL'], '6')
-        self.assertEqual(self.c['channel'], 11)
+        self.assertEqual(self.c['channel'], original_channel)
         self.d['protection']['wireless']['bssid'] = '00:11:22:33:44:55'
         with self.assertRaises(ValueError):
             resolve_live_target(self.d, self.c)
